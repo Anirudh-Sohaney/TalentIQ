@@ -116,8 +116,8 @@ serve(async (req) => {
       email: record.email,
       initials: initials,
       checkin_time: checkinTime,
-      university: jsonMetadata.university,
-      major: jsonMetadata.major,
+      university: record.university || jsonMetadata.university,
+      major: record.major || jsonMetadata.major,
       resume_content: fullMarkdown,
       short_resume_content: shortMarkdown,
       follow_up_questions: jsonMetadata.follow_up_questions
