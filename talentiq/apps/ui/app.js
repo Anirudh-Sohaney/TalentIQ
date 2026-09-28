@@ -14,7 +14,11 @@ export function getLogsForView(logs, state, view) {
   return logs.filter((log) => (view === 'saved' ? saved.has(log.id) : !saved.has(log.id)));
 }
 
-const excludedCandidateIds = new Set([]);
+export function filterLogsBySelections(logs, filters) {
+  return logs.filter((log) => filters.every((filter) => filter.ids.includes(log.id)));
+}
+
+const excludedCandidateIds = new Set(['71932106-cc0c-4ec9-ad8f-3bef81ab1844', '44444444-4444-4444-4444-444444444444']);
 const excludedCandidateNames = new Set([]);
 
 export function excludeNonCandidateLogs(logs) {
@@ -226,7 +230,7 @@ async function fetchCandidates() {
   };
 }
 
-const state = { activeView: 'logs', dataSource: 'live', savedIds: [], transcriptIds: [], transcriptTextByCandidate: {}, candidateStatuses: {}, selectedCandidateId: null, resumeOpen: false, resumeClosing: false, isRecording: false, hasRecording: false, transcriptSaved: false };
+const state = { activeView: 'logs', dataSource: 'live', savedIds: [], transcriptIds: [], transcriptTextByCandidate: {}, candidateStatuses: {}, filters: [], filterOptions: [], tagsByCandidate: {}, selectedCandidateId: null, resumeOpen: false, resumeClosing: false, isRecording: false, hasRecording: false, transcriptSaved: false };
 let audioContext;
 let audioProcessor;
 let audioWebSocket;
@@ -440,8 +444,41 @@ async function sendCandidateEmail(event) {
   }
 }
 
+function setFilterStatus(message, isError = false) {
+  const status = document.querySelector('[data-filter-status]');
+  status.textContent = message;
+  status.classList.toggle('is-error', isError);
+}
+
+function renderFilters() {
+  document.querySelector('[data-clear-filters]').hidden = state.filters.length === 0;
+  document.querySelector('[data-filter-suggestions]').innerHTML = state.filterOptions.slice(0, 12).map(({ tag, count }) => {
+    const selected = state.filters.some((filter) => filter.tag === tag);
+    return `<button class="filter-chip" type="button" data-add-tag="${escapeHtml(tag)}" aria-pressed="${selected}" aria-label="Filter by ${escapeHtml(tag)}, ${count} ${count === 1 ? 'candidate' : 'candidates'}">${escapeHtml(tag)} <small>${count}</small></button>`;
+  }).join('');
+  document.querySelector('[data-active-filters]').innerHTML = state.filters.map((filter, index) =>
+    `<button class="filter-chip is-active" type="button" data-remove-filter="${index}" aria-label="Remove ${escapeHtml(filter.label)} filter">${escapeHtml(filter.label)} <span aria-hidden="true">×</span></button>`,
+  ).join('');
+}
+
+async function loadFilterOptions() {
+  try {
+    const response = await fetch('/api/filter-options');
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error ?? 'Could not generate filters.');
+    state.filterOptions = payload.options ?? [];
+    state.tagsByCandidate = payload.tagsByCandidate ?? {};
+    setFilterStatus(state.filterOptions.length
+      ? 'Suggested filters are based on evidence found in resumes. Missing tags do not mean a candidate lacks a skill.'
+      : 'No supported filter tags were found in these resumes. You can still describe a custom filter.');
+    renderFilters();
+  } catch (error) {
+    setFilterStatus(error.message || 'AI filters are unavailable right now.', true);
+  }
+}
+
 function renderList() {
-  const visibleLogs = getLogsForView(checkIns, state, state.activeView);
+  const visibleLogs = filterLogsBySelections(getLogsForView(checkIns, state, state.activeView), state.filters);
   const title = state.activeView === 'saved' ? 'Saved candidates' : 'Check-in logs';
   const description = state.activeView === 'saved'
     ? 'Candidates you flagged for follow-up from today’s career fair.'
@@ -487,9 +524,9 @@ function renderList() {
     <div class="empty-state" role="row">
       <div role="cell" aria-colspan="3">
         <span class="empty-state-mark" aria-hidden="true">✓</span>
-        <h2>${state.activeView === 'saved' ? 'No saved candidates yet' : 'No check-ins available'}</h2>
-        <p>${state.activeView === 'saved' ? 'Use Save on a check-in to keep a candidate handy for follow-up.' : 'Candidate check-ins will appear here when they are available.'}</p>
-        ${state.activeView === 'saved' ? '<button class="button button-primary" type="button" data-return-to-logs>View logs</button>' : ''}
+        <h2>${state.filters.length ? 'No candidates match these filters' : state.activeView === 'saved' ? 'No saved candidates yet' : 'No check-ins available'}</h2>
+        <p>${state.filters.length ? 'Try removing a filter or describing a different skill or experience.' : state.activeView === 'saved' ? 'Use Save on a check-in to keep a candidate handy for follow-up.' : 'Candidate check-ins will appear here when they are available.'}</p>
+        ${state.filters.length ? '<button class="button button-primary" type="button" data-clear-filters>Clear filters</button>' : state.activeView === 'saved' ? '<button class="button button-primary" type="button" data-return-to-logs>View logs</button>' : ''}
       </div>
     </div>
   `;
@@ -509,6 +546,7 @@ function renderList() {
       ? `${state.activeView === 'saved' ? 'Saved' : 'Logs'}, current view, ${state.activeView === 'saved' ? state.savedIds.length : checkIns.length} candidates`
       : state.activeView === 'saved' ? `Saved candidates, ${state.savedIds.length}` : `Logs, ${checkIns.length} candidates`);
   });
+  renderFilters();
 }
 
 function renderRecord() {
@@ -794,7 +832,66 @@ function startDashboard() {
       .find((button) => button.dataset.candidateId === candidateId && button.dataset.candidateStatus === outcome)?.focus();
   });
 
+  document.querySelector('[data-filter-form]').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const input = document.querySelector('[data-filter-input]');
+    const button = document.querySelector('[data-filter-submit]');
+    const query = input.value.trim();
+    if (!query) {
+      setFilterStatus('Enter a skill or experience to filter by.', true);
+      input.focus();
+      return;
+    }
+    button.disabled = true;
+    setFilterStatus(`Finding resume evidence for “${query}”…`);
+    try {
+      const response = await fetch('/api/filter-query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error ?? 'Could not apply this filter.');
+      state.filters.push({ label: query, ids: payload.ids ?? [] });
+      input.value = '';
+      setFilterStatus(`Added “${query}” based on resume evidence.`);
+      renderList();
+      input.focus();
+    } catch (error) {
+      setFilterStatus(error.message || 'Could not apply this filter.', true);
+    } finally {
+      button.disabled = false;
+    }
+  });
+
   document.addEventListener('click', (event) => {
+    const tagButton = event.target.closest('[data-add-tag]');
+    if (tagButton) {
+      const tag = tagButton.dataset.addTag;
+      if (!state.filters.some((filter) => filter.tag === tag)) {
+        const ids = Object.entries(state.tagsByCandidate).filter(([, tags]) => tags.includes(tag)).map(([id]) => id);
+        state.filters.push({ label: tag, tag, ids });
+        setFilterStatus(`Added “${tag}” based on resume tags.`);
+        renderList();
+      }
+      return;
+    }
+
+    const removeFilterButton = event.target.closest('[data-remove-filter]');
+    if (removeFilterButton) {
+      state.filters.splice(Number(removeFilterButton.dataset.removeFilter), 1);
+      renderList();
+      document.querySelector('[data-filter-input]').focus();
+      return;
+    }
+
+    if (event.target.closest('[data-clear-filters]')) {
+      state.filters = [];
+      renderList();
+      document.querySelector('[data-filter-input]').focus();
+      return;
+    }
+
     const viewButton = event.target.closest('[data-view]');
     const saveButton = event.target.closest('[data-save]');
     const recordButton = event.target.closest('[data-record]');
@@ -923,6 +1020,7 @@ function startDashboard() {
           ? 'Showing the most recently loaded candidate data.'
           : 'Live candidate data loaded.', source !== 'live');
       renderList();
+      loadFilterOptions();
     })
     .catch(() => {
       checkIns = [];

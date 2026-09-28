@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { appendLiveTranscript, excludeNonCandidateLogs, frameAudioSamples, getCandidateResume, getLogsForView, getRecordScreenLayout, getRecordingControls, renderFollowUpQuestions, renderResumeMarkdown, saveCheckIn, saveTranscript, sortCheckInsByTime, toCandidateLog, toggleRecording, transcriptTextForSession, updateCandidateStatus } from '../app.js';
+import * as dashboard from '../app.js';
+const { appendLiveTranscript, excludeNonCandidateLogs, frameAudioSamples, getCandidateResume, getLogsForView, getRecordScreenLayout, getRecordingControls, renderFollowUpQuestions, renderResumeMarkdown, saveCheckIn, saveTranscript, sortCheckInsByTime, toCandidateLog, toggleRecording, transcriptTextForSession, updateCandidateStatus } = dashboard;
 import { extractPublicSupabaseConfig } from '../server-utils.js';
 import { loadFallbackCandidates } from '../fallback-candidates.mjs';
 
@@ -49,6 +50,21 @@ test('the Logs view excludes attendees that have been saved', () => {
   const visibleLogs = getLogsForView(logs, { savedIds: ['ava-patel'] }, 'logs');
 
   assert.deepEqual(visibleLogs.map((log) => log.id), ['marcus-lee']);
+});
+
+test('recruiter filters narrow either list and combine as AND conditions', () => {
+  const candidates = [
+    { id: 'ava-patel', name: 'Ava Patel' },
+    { id: 'marcus-lee', name: 'Marcus Lee' },
+    { id: 'sofia-ramirez', name: 'Sofia Ramirez' },
+  ];
+  const filters = [
+    { label: 'Python', ids: ['ava-patel', 'marcus-lee'] },
+    { label: 'API projects', ids: ['ava-patel', 'sofia-ramirez'] },
+  ];
+
+  assert.deepEqual(dashboard.filterLogsBySelections(candidates, filters).map(({ id }) => id), ['ava-patel']);
+  assert.deepEqual(dashboard.filterLogsBySelections(candidates, []).map(({ id }) => id), candidates.map(({ id }) => id));
 });
 
 test('a Supabase candidate row maps to a dashboard check-in without losing its resume', () => {

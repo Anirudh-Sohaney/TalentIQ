@@ -1,10 +1,12 @@
 import { createServer } from 'node:http';
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { extractPublicSupabaseConfig } from './server-utils.js';
 import { loadFallbackCandidates } from './fallback-candidates.mjs';
+import { extractTagsFromResumes, getFilterOptions, matchCandidatesToIntent } from './candidate-filtering.mjs';
 
 const rootDirectory = fileURLToPath(new URL('.', import.meta.url));
 const backendConfigPath = fileURLToPath(new URL('../backend/test_anon.js', import.meta.url));
@@ -16,6 +18,8 @@ const mimeTypes = {
   '.mjs': 'text/javascript; charset=utf-8',
 };
 let lastGoodCandidates;
+let filterTagsCache;
+const filterQueryCache = new Map();
 
 async function getSupabaseConfig() {
   if (process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY) {
@@ -43,6 +47,43 @@ async function loadCandidates() {
   if (!Array.isArray(candidates)) throw new Error('Supabase returned invalid candidate data');
   lastGoodCandidates = candidates;
   return candidates;
+}
+
+async function candidatesForFilters() {
+  try {
+    return await loadCandidates();
+  } catch {
+    return lastGoodCandidates ?? loadFallbackCandidates();
+  }
+}
+
+function candidateFingerprint(candidates) {
+  return createHash('sha256').update(JSON.stringify(candidates.map(({ id, resume_content }) => [id, resume_content]))).digest('hex');
+}
+
+async function loadFilterTags(candidates) {
+  const fingerprint = candidateFingerprint(candidates);
+  if (filterTagsCache?.fingerprint !== fingerprint) {
+    const promise = extractTagsFromResumes(candidates);
+    filterTagsCache = { fingerprint, promise };
+    promise.catch(() => {
+      if (filterTagsCache?.promise === promise) filterTagsCache = undefined;
+    });
+  }
+  return filterTagsCache.promise;
+}
+
+async function readJsonBody(request) {
+  let body = '';
+  for await (const chunk of request) {
+    body += chunk;
+    if (body.length > 1000) throw new Error('Filter request is too long.');
+  }
+  try {
+    return JSON.parse(body);
+  } catch {
+    throw new Error('Filter request must be valid JSON.');
+  }
 }
 
 function sendJson(response, status, payload, source = 'live') {
@@ -99,6 +140,47 @@ const server = createServer(async (request, response) => {
 
   if (request.method === 'GET' && requestUrl.pathname === '/api/google-config') {
     sendJson(response, 200, { clientId: process.env.GOOGLE_CLIENT_ID ?? '' }, null);
+    return;
+  }
+
+  if (request.method === 'GET' && requestUrl.pathname === '/api/filter-options') {
+    if (!(process.env.OPENROUTER_KEY || process.env.OPENROUTER_API_KEY)) {
+      sendJson(response, 503, { error: 'OPENROUTER_KEY is not configured for the dashboard server.' }, null);
+      return;
+    }
+    try {
+      const candidates = await candidatesForFilters();
+      const tagsByCandidate = await loadFilterTags(candidates);
+      sendJson(response, 200, { tagsByCandidate, options: getFilterOptions(tagsByCandidate) }, null);
+    } catch (error) {
+      console.warn('Filter tag extraction unavailable:', error.message);
+      sendJson(response, 502, { error: 'Could not generate resume filters right now.' }, null);
+    }
+    return;
+  }
+
+  if (request.method === 'POST' && requestUrl.pathname === '/api/filter-query') {
+    if (!(process.env.OPENROUTER_KEY || process.env.OPENROUTER_API_KEY)) {
+      sendJson(response, 503, { error: 'OPENROUTER_KEY is not configured for the dashboard server.' }, null);
+      return;
+    }
+    try {
+      const { query } = await readJsonBody(request);
+      if (typeof query !== 'string' || !query.trim() || query.length > 200) {
+        sendJson(response, 400, { error: 'Enter a filter under 200 characters.' }, null);
+        return;
+      }
+      const candidates = await candidatesForFilters();
+      const cacheKey = `${candidateFingerprint(candidates)}:${query.trim().toLowerCase()}`;
+      if (!filterQueryCache.has(cacheKey)) {
+        filterQueryCache.set(cacheKey, matchCandidatesToIntent(candidates, query));
+      }
+      const ids = await filterQueryCache.get(cacheKey);
+      sendJson(response, 200, { ids }, null);
+    } catch (error) {
+      console.warn('Recruiter filter unavailable:', error.message);
+      sendJson(response, error.message.includes('request') ? 400 : 502, { error: error.message.includes('request') ? error.message : 'Could not apply this filter right now.' }, null);
+    }
     return;
   }
 

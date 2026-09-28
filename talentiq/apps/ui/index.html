@@ -53,6 +53,26 @@
           </div>
         </section>
 
+        <section class="filter-panel" aria-labelledby="filter-title">
+          <div class="filter-panel-heading">
+            <div>
+              <p class="eyebrow">Resume evidence</p>
+              <h2 id="filter-title">Filter candidates</h2>
+            </div>
+            <button class="filter-clear" type="button" data-clear-filters hidden>Clear filters</button>
+          </div>
+          <form class="filter-form" data-filter-form>
+            <label for="candidate-filter-input">Describe what you’re looking for</label>
+            <div class="filter-form-row">
+              <input id="candidate-filter-input" type="search" data-filter-input maxlength="200" placeholder="e.g. Python projects or API experience" autocomplete="off" />
+              <button class="button button-primary" type="submit" data-filter-submit>Add filter</button>
+            </div>
+          </form>
+          <p class="filter-status" data-filter-status role="status" aria-live="polite">Generating suggested filters from resumes…</p>
+          <div class="filter-suggestions" data-filter-suggestions aria-label="Suggested resume filters"></div>
+          <div class="filter-active" data-active-filters aria-label="Active candidate filters"></div>
+        </section>
+
         <section class="logs-section" id="candidate-list" role="table" aria-label="Candidate check-in list" tabindex="-1">
           <div class="list-header" role="row">
             <div role="columnheader">Candidate</div>
@@ -175,6 +195,6 @@
     </dialog>
 
     <script src="https://accounts.google.com/gsi/client" async defer></script>
-    <script type="module" src="app.js?v=26"></script>
+    <script type="module" src="app.js?v=27"></script>
   </body>
 </html>
