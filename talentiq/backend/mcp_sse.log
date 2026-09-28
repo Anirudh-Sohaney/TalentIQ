@@ -1,0 +1,16 @@
+HTTP/2 401 
+date: Tue, 22 Sep 2026 00:05:37 GMT
+content-type: application/json; charset=utf-8
+content-length: 38
+x-powered-by: Express
+vary: Origin
+access-control-allow-credentials: true
+access-control-expose-headers: x-connection-encrypted,x-forwarded-for,user-agent,CF-Connecting-IP,Retry-After,X-RateLimit-Limit,X-RateLimit-Remaining,X-RateLimit-Reset
+etag: W/"26-gEVL32AqR7f2Gd9WZUt9IBU+dfo"
+cf-cache-status: DYNAMIC
+set-cookie: __cf_bm=GePcUcCFP6JL3zBYPvAqeX02uAiYc2dYLQlw7e23oD4-1790035537.5203967-1.0.1.1-bn1QLlB29eMUgr64CNkViWdAiYuyN6SKvQEjiQeYcRcNElwVofYlqKfWgTstXIOK8Dg_qkriWxkDoXgcs6ItWuHmZoX_rcZl8OA5t1SgmaSBxUpX87yq_ifxFWBEtJsm; HttpOnly; SameSite=None; Secure; Path=/; Domain=supabase.com; Expires=Tue, 22 Sep 2026 00:35:37 GMT
+strict-transport-security: max-age=31536000; includeSubDomains; preload
+server: cloudflare
+cf-ray: a3ed0f1d7cca6b02-MCI
+
+{"message":"JWT could not be decoded"}

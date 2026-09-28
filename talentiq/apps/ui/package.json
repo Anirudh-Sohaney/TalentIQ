@@ -1,0 +1,10 @@
+{
+  "name": "talentiq-career-fair-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-537324549479-v678umc6vivdi8hh2662gkp7h9u1d5os.apps.googleusercontent.com} node server.mjs",
+    "test": "node --test"
+  }
+}

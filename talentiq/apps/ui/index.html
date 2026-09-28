@@ -1,49 +1,180 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Voice Filtering</title>
-    <link rel="stylesheet" href="/styles.css">
-</head>
-<body>
-    <div class="container">
-        <header>
-            <h1>Combined Voice Filtering</h1>
-            <div id="status" class="status idle">Idle</div>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="TalentIQ career fair candidate check-in logs." />
+    <title>TalentIQ — Career Fair Logs</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#candidate-list">Skip to candidate list</a>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="TalentIQ navigation">
+        <a class="brand" href="#logs" aria-label="TalentIQ home">
+          <span class="brand-mark" aria-hidden="true">T</span>
+          <span>Talent<span>IQ</span></span>
+        </a>
+
+        <nav class="nav-list" aria-label="Candidate views">
+          <button class="nav-item is-active" type="button" data-view="logs" aria-label="Logs" aria-current="page">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14M5 10h14M5 16h14M5 22h14" /></svg>
+            <span>Logs</span>
+            <span class="nav-count" data-total-checkins>15</span>
+          </button>
+          <button class="nav-item" type="button" data-view="saved" aria-label="Saved candidates" aria-current="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5h12v17l-6-3.5-6 3.5z" /></svg>
+            <span>Saved</span>
+            <span class="nav-count" data-saved-count>0</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <span class="fair-indicator" aria-hidden="true"></span>
+          <div>
+            <strong>Career Fair 2026</strong>
+            <span>Live check-ins</span>
+          </div>
+        </div>
+      </aside>
+
+      <div class="workspace">
+      <main class="main-content" id="logs" data-dashboard-screen>
+        <section class="hero" aria-labelledby="page-title">
+          <div>
+            <p class="eyebrow">Candidate intake</p>
+            <h1 id="page-title" data-view-title>Check-in logs</h1>
+            <p data-view-description>People who checked in at the TalentIQ career fair today.</p>
+          </div>
+          <div class="hero-summary">
+            <span class="summary-label">Today</span>
+            <strong data-log-count>15 people</strong>
+            <span>checked in</span>
+          </div>
+        </section>
+
+        <section class="logs-section" id="candidate-list" role="table" aria-label="Candidate check-in list" tabindex="-1">
+          <div class="list-header" role="row">
+            <div role="columnheader">Candidate</div>
+            <div role="columnheader">Checked in</div>
+            <div role="columnheader">Actions</div>
+          </div>
+          <div class="log-list" data-log-list role="rowgroup"></div>
+        </section>
+        <p class="data-status" data-data-status role="status" hidden></p>
+      </main>
+
+      <section class="record-screen" data-record-screen aria-labelledby="record-title" hidden>
+        <header class="record-topbar">
+          <button class="back-button" type="button" data-back-to-logs>
+            <span aria-hidden="true">←</span> Back to logs
+          </button>
+          <span class="record-label">Candidate record</span>
         </header>
-        <div class="controls">
-            <div class="device-select">
-                <label for="device">Microphone:</label>
-                <select id="device" disabled><option value="">Loading devices...</option></select>
-                <label class="record-label" title="Save WAV captures for QA"><input type="checkbox" id="recordCheckbox"><span>Record WAVs</span></label>
+        <div class="record-content">
+          <p class="eyebrow">Career fair check-in</p>
+          <h1 id="record-title" data-record-name>Candidate</h1>
+          <p class="record-meta" data-record-meta></p>
+          <p class="record-time" data-record-time></p>
+          <p class="recording-status" data-recording-status role="status" aria-live="polite" aria-atomic="true"></p>
+        </div>
+
+        <button class="mic-record-button" type="button" data-toggle-recording aria-label="Start recording">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14.5a3 3 0 0 0 3-3v-5a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Zm5-4v1a5 5 0 0 1-10 0v-1M12 16.5v4M8.5 20.5h7" /></svg>
+          <span class="sr-only" data-recording-label>Start recording</span>
+        </button>
+        <div class="recording-wave" data-recording-wave aria-hidden="true" hidden>
+          <span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <button class="save-transcript-button" type="button" data-save-transcript hidden>
+          Save transcript
+        </button>
+        <span class="transcript-added" data-transcript-added hidden>Added</span>
+
+        <button class="resume-tab" type="button" data-open-resume aria-label="Open candidate resume" title="Open candidate resume">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.75h8l4 4v12.5H6z" /><path d="M14 3.75v4h4M9 12h6M9 15.5h6" /></svg>
+        </button>
+        <aside class="resume-drawer" data-resume-drawer aria-labelledby="resume-drawer-title" aria-hidden="true" inert>
+          <header class="resume-header">
+            <div>
+              <p class="eyebrow">Candidate document</p>
+              <h2 id="resume-drawer-title">AI summarized resume</h2>
             </div>
-            <button id="startBtn" disabled>Start</button>
-            <button id="stopBtn" disabled>Stop</button>
+            <button class="drawer-close" type="button" data-close-resume aria-label="Close resume">×</button>
+          </header>
+          <div class="resume-content" data-resume-content tabindex="0" aria-label="AI summarized resume content"></div>
+        </aside>
+      </section>
+
+      <section class="transcript-screen" data-transcript-screen aria-labelledby="transcript-title" hidden>
+        <header class="record-topbar">
+          <button class="back-button" type="button" data-back-to-logs-from-transcript>
+            <span aria-hidden="true">←</span> Back to logs
+          </button>
+          <span class="record-label">Saved transcript</span>
+        </header>
+        <div class="transcript-content">
+          <p class="eyebrow">Candidate conversation</p>
+          <h1 id="transcript-title" data-transcript-name>Transcript</h1>
+          <p class="transcript-meta" data-transcript-meta></p>
+          <article class="transcript-card">
+            <p class="eyebrow">Transcript</p>
+            <p data-transcript-body></p>
+          </article>
         </div>
-        <div class="meter-container">
-            <label>Input Level:</label>
-            <div class="meter-bar"><div id="meter" class="meter-fill" style="width: 0%"></div></div>
-            <span id="meterDb" class="meter-db">-∞ dB</span>
+      </section>
+
+      <section class="resume-info-screen" data-resume-info-screen aria-labelledby="resume-info-title" hidden>
+        <header class="record-topbar">
+          <button class="back-button" type="button" data-back-to-logs-from-resume-info>
+            <span aria-hidden="true">←</span> Back to logs
+          </button>
+          <span class="record-label">Candidate resume</span>
+        </header>
+        <div class="resume-page-content">
+          <p class="eyebrow">Candidate document</p>
+          <h1 id="resume-info-title" data-resume-info-name>Resume</h1>
+          <p class="resume-info-meta" data-resume-info-meta></p>
+          <article class="resume-info-card">
+            <h2 class="resume-info-heading">Resume detailed summary</h2>
+            <div class="resume-content" data-resume-info-content></div>
+          </article>
         </div>
-        <p class="pipeline-description">RNNoise, one 16 kHz conversion, Hush, and local ASR.</p>
-        <div class="transcript-section">
-            <div class="transcript-header"><h3>Transcript</h3><div class="transcript-actions"><button id="copyBtn">Copy</button><button id="clearBtn" disabled>Clear</button></div></div>
-            <div id="transcript" class="transcript-panel"><div class="transcript-placeholder">No transcript yet. Press Start to begin.</div></div>
-        </div>
-        <div class="info-section">
-            <h3>System Info</h3>
-            <div class="info-grid">
-                <div class="info-item"><label>Model:</label><span id="modelInfo">faster-whisper-tiny.en</span></div>
-                <div class="info-item"><label>ASR Status:</label><span id="asrStatus">Loading...</span></div>
-                <div class="info-item"><label>RNNoise:</label><span id="rnnoiseInfo">Checking...</span></div>
-                <div class="info-item"><label>Hush:</label><span id="hushInfo">Checking...</span></div>
-                <div class="info-item" id="metricsSection" style="display:none;"><label>RNNoise Timing:</label><span id="rnnoiseMetrics">--</span><br><label>Hush Timing:</label><span id="hushMetrics">--</span></div>
-            </div>
-        </div>
-        <div class="permission-notice" id="permissionNotice" style="display: none;"><p>Microphone permission is required. When you press Start, your browser or OS will ask for permission. If denied, check System Settings → Privacy & Security → Microphone.</p></div>
-        <div id="errorBanner" class="error-banner" style="display: none;"></div>
+      </section>
+      </div>
     </div>
-    <script src="/app.js"></script>
-</body>
+
+    <dialog class="email-dialog" data-email-dialog aria-labelledby="email-dialog-title">
+      <header class="email-dialog-header">
+        <div>
+          <p class="eyebrow">Candidate follow-up</p>
+          <h2 id="email-dialog-title" data-email-candidate>Email candidate</h2>
+        </div>
+        <button class="drawer-close" type="button" data-email-close aria-label="Close email window">×</button>
+      </header>
+      <div class="email-dialog-content">
+        <div class="email-connection">
+          <p data-email-connection-status role="status" aria-live="polite">Connect Gmail to view the conversation and send.</p>
+          <button class="button button-secondary" type="button" data-connect-gmail>Connect Gmail</button>
+        </div>
+        <section class="email-thread" aria-labelledby="email-thread-title">
+          <h3 id="email-thread-title">Conversation</h3>
+          <div class="email-thread-messages" data-email-thread>Connect Gmail to load this candidate’s conversation.</div>
+        </section>
+        <form class="email-compose" data-email-form>
+          <h3>Compose</h3>
+          <label>To <input type="email" data-email-to readonly required /></label>
+          <label>Subject <input type="text" data-email-subject required /></label>
+          <label>Message <textarea data-email-body rows="7" required></textarea></label>
+          <div class="email-compose-actions">
+            <span data-email-send-status role="status" aria-live="polite"></span>
+            <button class="button button-primary" type="submit" data-email-send disabled>Send with Gmail</button>
+          </div>
+        </form>
+      </div>
+    </dialog>
+
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script type="module" src="app.js?v=26"></script>
+  </body>
 </html>
