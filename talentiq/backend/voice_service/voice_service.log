@@ -21,3 +21,9 @@ INFO:     127.0.0.1:57403 - "GET /api/events HTTP/1.1" 200 OK
 INFO:     127.0.0.1:57406 - "POST /api/stop HTTP/1.1" 200 OK
 INFO:     127.0.0.1:57406 - "POST /api/stop HTTP/1.1" 200 OK
 INFO:     127.0.0.1:57604 - "POST /api/stop HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65375 - "GET / HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:65375 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50892 - "POST /api/stop HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50909 - "POST /api/stop HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50915 - "POST /api/stop HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50928 - "POST /api/stop HTTP/1.1" 200 OK

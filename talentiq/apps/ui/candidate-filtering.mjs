@@ -1,3 +1,4 @@
+// Kept in the same order as main worktree's talentiq/extraction/tags.md.
 const vocabulary = [
   'software engineering', 'software development lifecycle', 'programming', 'Python', 'Java',
   'JavaScript', 'TypeScript', 'C++', 'SQL', 'HTML/CSS', 'data structures and algorithms',

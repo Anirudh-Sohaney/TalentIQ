@@ -173,7 +173,11 @@ const server = createServer(async (request, response) => {
       const candidates = await candidatesForFilters();
       const cacheKey = `${candidateFingerprint(candidates)}:${query.trim().toLowerCase()}`;
       if (!filterQueryCache.has(cacheKey)) {
-        filterQueryCache.set(cacheKey, matchCandidatesToIntent(candidates, query));
+        const promise = matchCandidatesToIntent(candidates, query);
+        filterQueryCache.set(cacheKey, promise);
+        promise.catch(() => {
+          if (filterQueryCache.get(cacheKey) === promise) filterQueryCache.delete(cacheKey);
+        });
       }
       const ids = await filterQueryCache.get(cacheKey);
       sendJson(response, 200, { ids }, null);

@@ -41,3 +41,27 @@ test('empty recruiter intent is rejected before calling the model', async () => 
     /Enter a filter/,
   );
 });
+
+test('filter completions request the DeepSeek JSON-capable model', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalKey = process.env.OPENROUTER_KEY;
+  let request;
+  process.env.OPENROUTER_KEY = 'test-key';
+  globalThis.fetch = async (_url, options) => {
+    request = JSON.parse(options.body);
+    return {
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: '{"candidate_ids":["ava"]}' } }] }),
+    };
+  };
+
+  try {
+    assert.deepEqual(await filtering.completeFilterJson('Find Python candidates'), { candidate_ids: ['ava'] });
+    assert.equal(request.model, 'deepseek/deepseek-v4.1-flash');
+    assert.deepEqual(request.response_format, { type: 'json_object' });
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalKey === undefined) delete process.env.OPENROUTER_KEY;
+    else process.env.OPENROUTER_KEY = originalKey;
+  }
+});

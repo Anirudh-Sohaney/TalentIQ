@@ -67,6 +67,11 @@ test('recruiter filters narrow either list and combine as AND conditions', () =>
   assert.deepEqual(dashboard.filterLogsBySelections(candidates, []).map(({ id }) => id), candidates.map(({ id }) => id));
 });
 
+test('the result count identifies filtered matches instead of calling them check-ins', () => {
+  assert.equal(dashboard.countCaption([]), 'checked in');
+  assert.equal(dashboard.countCaption([{ label: 'Python', ids: ['ava-patel'] }]), 'matching filters');
+});
+
 test('a Supabase candidate row maps to a dashboard check-in without losing its resume', () => {
   const candidate = toCandidateLog({
     id: 'ava-patel',

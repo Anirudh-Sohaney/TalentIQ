@@ -18,6 +18,10 @@ export function filterLogsBySelections(logs, filters) {
   return logs.filter((log) => filters.every((filter) => filter.ids.includes(log.id)));
 }
 
+export function countCaption(filters) {
+  return filters.length ? 'matching filters' : 'checked in';
+}
+
 const excludedCandidateIds = new Set(['71932106-cc0c-4ec9-ad8f-3bef81ab1844', '44444444-4444-4444-4444-444444444444']);
 const excludedCandidateNames = new Set([]);
 
@@ -487,6 +491,7 @@ function renderList() {
   document.querySelector('[data-view-title]').textContent = title;
   document.querySelector('[data-view-description]').textContent = description;
   document.querySelector('[data-log-count]').textContent = `${visibleLogs.length} ${visibleLogs.length === 1 ? 'person' : 'people'}`;
+  document.querySelector('[data-summary-caption]').textContent = countCaption(state.filters);
   document.querySelector('[data-total-checkins]').textContent = checkIns.length;
   document.querySelector('[data-saved-count]').textContent = state.savedIds.length;
 
@@ -873,6 +878,7 @@ function startDashboard() {
         state.filters.push({ label: tag, tag, ids });
         setFilterStatus(`Added “${tag}” based on resume tags.`);
         renderList();
+        document.querySelector('[data-filter-input]').focus();
       }
       return;
     }
