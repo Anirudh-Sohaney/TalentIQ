@@ -72,6 +72,121 @@ test('the result count identifies filtered matches instead of calling them check
   assert.equal(dashboard.countCaption([{ label: 'Python', ids: ['ava-patel'] }]), 'matching filters');
 });
 
+test('a custom filter is saved once and stays visible with generated suggestions', () => {
+  const saved = dashboard.addCustomFilterOption(['API experience'], '  python projects  ');
+  const repeated = dashboard.addCustomFilterOption(saved, 'PYTHON PROJECTS');
+  const suggestions = dashboard.getFilterSuggestions(repeated, [
+    { tag: 'Python', count: 4 }, { tag: 'SQL', count: 3 },
+  ]);
+
+  assert.deepEqual(repeated, ['API experience', 'python projects']);
+  assert.deepEqual(suggestions, [
+    { label: 'API experience', custom: true },
+    { label: 'python projects', custom: true },
+    { label: 'Python', count: 4, custom: false },
+    { label: 'SQL', count: 3, custom: false },
+  ]);
+});
+
+test('Saved compares every saved candidate even when a Logs filter is active', () => {
+  const state = { activeView: 'saved', savedIds: ['ava-patel', 'marcus-lee'], filters: [{ label: 'Python', ids: ['ava-patel'] }] };
+
+  assert.deepEqual(dashboard.getVisibleLogsForView(logs, state).map(({ id }) => id), ['ava-patel', 'marcus-lee']);
+});
+
+test('saved comparison extracts skills, experience, projects, and summary from resume evidence', () => {
+  const candidate = {
+    resume: '# Ava Patel\n\n## PROFESSIONAL SUMMARY\nBuilds data tools for campus teams.\n\n## EXPERIENCE\n**Data Intern** | Fleet Co\n- Built a Python reporting pipeline.\n\n## PROJECTS\n**Route Dashboard**\n- Visualized shipment trends.\n\n## SKILLS\n- **Technical**: Python, SQL\n- **Tools**: Tableau',
+  };
+
+  assert.deepEqual(dashboard.extractComparisonProfile(candidate), {
+    summary: 'Builds data tools for campus teams.',
+    skills: [{ label: 'Technical', detail: 'Python, SQL' }, { label: 'Tools', detail: 'Tableau' }],
+    experience: [{ title: 'Data Intern | Fleet Co', detail: 'Built a Python reporting pipeline.' }],
+    projects: [{ title: 'Route Dashboard', detail: 'Visualized shipment trends.' }],
+  });
+});
+
+test('saved comparison identifies shared and other listed skills without ranking people', () => {
+  const candidates = [
+    { id: 'ava', name: 'Ava', resume: '## SKILLS\n- **Technical**: Python, SQL\n- **Tools**: Tableau\n\n## EXPERIENCE\n**Data Intern**\n- Built reports.\n**Tutor**\n- Helped students.\n\n## PROJECTS\n**Dashboard**\n- Built charts.' },
+    { id: 'marcus', name: 'Marcus', resume: '## SKILLS\n- **Technical**: python, JavaScript\n- **Tools**: Figma\n\n## EXPERIENCE\n**Developer**\n- Built an app.\n\n## PROJECTS\n**Mobile App**\n- Built screens.\n**API**\n- Connected services.' },
+  ];
+
+  const comparison = dashboard.buildComparisonModel(candidates);
+  assert.deepEqual(comparison.sharedSkills, ['Python']);
+  assert.deepEqual(comparison.members.map(({ nonSharedSkills, counts }) => ({ nonSharedSkills, counts })), [
+    { nonSharedSkills: ['SQL', 'Tableau'], counts: { skills: 3, experience: 2, projects: 1 } },
+    { nonSharedSkills: ['JavaScript', 'Figma'], counts: { skills: 3, experience: 1, projects: 2 } },
+  ]);
+});
+
+test('skills shared by only some saved records remain visible for each record', () => {
+  const candidates = [
+    { id: 'v1', name: 'Vaman', resume: '## SKILLS\n- **Tools**: Google Workspace, Jira' },
+    { id: 'v2', name: 'Vaman', resume: '## SKILLS\n- **Tools**: Google Workspace, Jira' },
+    { id: 'a', name: 'Ava', resume: '## SKILLS\n- **Tools**: Google Workspace, SQL' },
+  ];
+
+  const comparison = dashboard.buildComparisonModel(candidates);
+  assert.deepEqual(comparison.sharedSkills, ['Google Workspace']);
+  assert.deepEqual(comparison.members.map(({ nonSharedSkills }) => nonSharedSkills), [['Jira'], ['Jira'], ['SQL']]);
+
+  const html = dashboard.renderComparisonBoard(candidates, { candidateStatuses: {}, transcriptIds: [] });
+  assert.match(html, /Skills not shared by everyone/);
+  assert.equal((html.match(/<li>Jira<\/li>/g) ?? []).length, 2);
+});
+
+test('comparison counts all documented roles and keeps tool lists inside parentheses together', () => {
+  const candidate = { id: 'a', name: 'Ava', resume: '## SKILLS\n- **Tools**: Jira (Boards, Automation), SQL\n\n## EXPERIENCE\n**Role One**\n- One.\n**Role Two**\n- Two.\n**Role Three**\n- Three.' };
+
+  const comparison = dashboard.buildComparisonModel([candidate]);
+  assert.deepEqual(comparison.members[0].skills, ['Jira (Boards, Automation)', 'SQL']);
+  assert.equal(comparison.members[0].counts.experience, 3);
+});
+
+test('comparison board renders a chart, comparable rows, decisions, and honest missing data', () => {
+  const candidates = [
+    { id: 'x', name: '<Alex>', university: 'State U', major: 'Analytics', resume: '## SKILLS\n- **Technical**: Python, <script>alert(1)</script>' },
+    { id: 'y', name: 'Morgan', university: 'Tech U', major: 'Design', resume: '## PROJECTS\n**Portfolio**\n- Built examples.' },
+  ];
+  const html = dashboard.renderComparisonBoard(candidates, { candidateStatuses: {}, transcriptIds: [] });
+
+  assert.match(html, /Evidence overview/);
+  assert.match(html, /Shared by every saved candidate/);
+  assert.match(html, /<table/);
+  assert.match(html, /<th[^>]*scope="row"[^>]*>Experience<\/th>/);
+  assert.match(html, /data-candidate-status="continue"/);
+  assert.match(html, /data-view-resume="x"/);
+  assert.match(html, /Not listed in resume/);
+  assert.match(html, /&lt;Alex&gt;/);
+  assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  assert.doesNotMatch(html, /<script>/);
+});
+
+test('saved candidate decisions and actions appear before comparison details', () => {
+  const candidates = [
+    { id: 'a', name: 'Ava', university: 'State U', major: 'Analytics', resume: '## SKILLS\n- Python' },
+    { id: 'b', name: 'Ben', university: 'Tech U', major: 'Design', resume: '## PROJECTS\n**Portfolio**' },
+  ];
+  const html = dashboard.renderComparisonBoard(candidates, {
+    candidateStatuses: { a: 'continue' }, transcriptIds: ['a'],
+  });
+
+  assert.ok(html.indexOf('data-candidate-status="continue"') < html.indexOf('Evidence overview'));
+  assert.equal((html.match(/data-candidate-status="continue"/g) ?? []).length, 2);
+  assert.ok(html.indexOf('data-view-resume="a"') < html.indexOf('Evidence overview'));
+  assert.ok(html.indexOf('data-view-transcript="a"') < html.indexOf('Evidence overview'));
+  assert.doesNotMatch(html, /<th scope="row">(?:Decision|Skills)<\/th>/);
+});
+
+test('a single saved candidate is shown without a misleading comparison winner', () => {
+  const html = dashboard.renderComparisonBoard([{ id: 'a', name: 'Ava', resume: '## SKILLS\n- Python' }], { candidateStatuses: {}, transcriptIds: [] });
+
+  assert.match(html, /Save another candidate to compare/);
+  assert.doesNotMatch(html, /Best candidate|Top candidate|score/i);
+});
+
 test('a Supabase candidate row maps to a dashboard check-in without losing its resume', () => {
   const candidate = toCandidateLog({
     id: 'ava-patel',
@@ -235,10 +350,10 @@ test('browser audio is framed into the 480-sample blocks RNNoise requires', () =
   assert.equal(remainder[0], 960);
 });
 
-test('opening a resume switches the record screen into focused document mode', () => {
+test('closing the resume releases the microphone while the drawer finishes closing', () => {
   assert.deepEqual(getRecordScreenLayout(true), { hideSidebar: true, dockMicrophone: true, showResumeTab: false });
   assert.deepEqual(getRecordScreenLayout(false), { hideSidebar: false, dockMicrophone: false, showResumeTab: true });
-  assert.deepEqual(getRecordScreenLayout(false, true), { hideSidebar: true, dockMicrophone: true, showResumeTab: false });
+  assert.deepEqual(getRecordScreenLayout(false, true), { hideSidebar: true, dockMicrophone: false, showResumeTab: false });
 });
 
 test('the log info view resolves the selected candidate’s raw resume', () => {

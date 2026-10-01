@@ -64,27 +64,38 @@
           <form class="filter-form" data-filter-form>
             <label for="candidate-filter-input">Describe what you’re looking for</label>
             <div class="filter-form-row">
-              <input id="candidate-filter-input" type="search" data-filter-input maxlength="200" placeholder="e.g. Python projects or API experience" autocomplete="off" />
+              <input id="candidate-filter-input" type="search" data-filter-input maxlength="200" aria-describedby="filter-status" placeholder="e.g. Python projects or API experience" autocomplete="off" />
               <button class="button button-primary" type="submit" data-filter-submit>Add filter</button>
             </div>
           </form>
-          <p class="filter-status" data-filter-status role="status" aria-live="polite">Generating suggested filters from resumes…</p>
-          <div class="filter-suggestions" data-filter-suggestions aria-label="Suggested resume filters"></div>
-          <div class="filter-active" data-active-filters aria-label="Active candidate filters"></div>
+          <p class="filter-status" id="filter-status" data-filter-status role="status" aria-live="polite">Generating suggested filters from resumes…</p>
+          <div class="filter-suggestions" data-filter-suggestions role="group" aria-label="Suggested and saved resume filters"></div>
+          <div class="filter-active" data-active-filters role="group" aria-label="Active candidate filters"></div>
         </section>
 
-        <section class="logs-section" id="candidate-list" role="table" aria-label="Candidate check-in list" tabindex="-1">
+        <section class="comparison-section" id="comparison-list" aria-labelledby="comparison-heading" tabindex="-1" hidden>
+          <div class="comparison-intro">
+            <div>
+              <p class="eyebrow">Side-by-side review</p>
+              <h2 id="comparison-heading">Compare saved candidates</h2>
+            </div>
+            <p>See documented similarities and differences before choosing a decision. Email drafts are never sent automatically.</p>
+          </div>
+          <div class="comparison-board" data-comparison-grid></div>
+        </section>
+
+        <div class="logs-section" id="candidate-list" role="table" aria-label="Candidate check-in list" tabindex="-1">
           <div class="list-header" role="row">
             <div role="columnheader">Candidate</div>
             <div role="columnheader">Checked in</div>
             <div role="columnheader">Actions</div>
           </div>
           <div class="log-list" data-log-list role="rowgroup"></div>
-        </section>
+        </div>
         <p class="data-status" data-data-status role="status" hidden></p>
       </main>
 
-      <section class="record-screen" data-record-screen aria-labelledby="record-title" hidden>
+      <main class="record-screen" data-record-screen aria-labelledby="record-title" hidden>
         <header class="record-topbar">
           <button class="back-button" type="button" data-back-to-logs>
             <span aria-hidden="true">←</span> Back to logs
@@ -124,9 +135,9 @@
           </header>
           <div class="resume-content" data-resume-content tabindex="0" aria-label="AI summarized resume content"></div>
         </aside>
-      </section>
+      </main>
 
-      <section class="transcript-screen" data-transcript-screen aria-labelledby="transcript-title" hidden>
+      <main class="transcript-screen" data-transcript-screen aria-labelledby="transcript-title" hidden>
         <header class="record-topbar">
           <button class="back-button" type="button" data-back-to-logs-from-transcript>
             <span aria-hidden="true">←</span> Back to logs
@@ -142,9 +153,9 @@
             <p data-transcript-body></p>
           </article>
         </div>
-      </section>
+      </main>
 
-      <section class="resume-info-screen" data-resume-info-screen aria-labelledby="resume-info-title" hidden>
+      <main class="resume-info-screen" data-resume-info-screen aria-labelledby="resume-info-title" hidden>
         <header class="record-topbar">
           <button class="back-button" type="button" data-back-to-logs-from-resume-info>
             <span aria-hidden="true">←</span> Back to logs
@@ -160,7 +171,7 @@
             <div class="resume-content" data-resume-info-content></div>
           </article>
         </div>
-      </section>
+      </main>
       </div>
     </div>
 
@@ -179,7 +190,7 @@
         </div>
         <section class="email-thread" aria-labelledby="email-thread-title">
           <h3 id="email-thread-title">Conversation</h3>
-          <div class="email-thread-messages" data-email-thread>Connect Gmail to load this candidate’s conversation.</div>
+          <div class="email-thread-messages" data-email-thread tabindex="0" aria-labelledby="email-thread-title">Connect Gmail to load this candidate’s conversation.</div>
         </section>
         <form class="email-compose" data-email-form>
           <h3>Compose</h3>
@@ -195,6 +206,6 @@
     </dialog>
 
     <script src="https://accounts.google.com/gsi/client" async defer></script>
-    <script type="module" src="app.js?v=27"></script>
+    <script type="module" src="app.js?v=34"></script>
   </body>
 </html>

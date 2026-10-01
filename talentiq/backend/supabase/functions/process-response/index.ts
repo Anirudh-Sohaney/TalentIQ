@@ -47,7 +47,7 @@ serve(async (req) => {
     const supabase = createClient(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "");
 
 // PDF Parsing using PDF.co API to prevent memory crashes
-    const PDFCO_KEY = "aarushfireblaze@gmail.com_a8ILEF29LfyzSbmounuwSeMmTlvtL6Y5DJrYA3QKYnvT2fWvoHxEvjIGBCQpW9yl";
+    const PDFCO_KEY = Deno.env.get("PDFCO_API_KEY");
     if (!PDFCO_KEY) throw new Error("Missing PDFCO_API_KEY");
 
     let rawText = "";

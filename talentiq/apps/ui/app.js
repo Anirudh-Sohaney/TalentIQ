@@ -18,8 +18,29 @@ export function filterLogsBySelections(logs, filters) {
   return logs.filter((log) => filters.every((filter) => filter.ids.includes(log.id)));
 }
 
+export function getVisibleLogsForView(logs, viewState) {
+  const candidates = getLogsForView(logs, viewState, viewState.activeView);
+  return viewState.activeView === 'saved' ? candidates : filterLogsBySelections(candidates, viewState.filters ?? []);
+}
+
 export function countCaption(filters) {
   return filters.length ? 'matching filters' : 'checked in';
+}
+
+export function addCustomFilterOption(options, query) {
+  const label = query.trim();
+  return options.some((option) => option.toLocaleLowerCase() === label.toLocaleLowerCase())
+    ? options
+    : [...options, label];
+}
+
+export function getFilterSuggestions(customOptions, generatedOptions) {
+  const customLabels = new Set(customOptions.map((label) => label.toLocaleLowerCase()));
+  return [
+    ...customOptions.map((label) => ({ label, custom: true })),
+    ...generatedOptions.filter(({ tag }) => !customLabels.has(tag.toLocaleLowerCase())).slice(0, 12)
+      .map(({ tag, count }) => ({ label: tag, count, custom: false })),
+  ];
 }
 
 const excludedCandidateIds = new Set(['71932106-cc0c-4ec9-ad8f-3bef81ab1844', '44444444-4444-4444-4444-444444444444']);
@@ -145,7 +166,7 @@ export function getRecordScreenLayout(isResumeOpen, isResumeClosing = false) {
 
   return {
     hideSidebar: isFocusedDocumentMode,
-    dockMicrophone: isFocusedDocumentMode,
+    dockMicrophone: isResumeOpen,
     showResumeTab: !isFocusedDocumentMode,
   };
 }
@@ -221,6 +242,160 @@ export function renderFollowUpQuestions(questions) {
   return `<section class="follow-up-questions" aria-label="AI-generated follow-up questions"><h2>AI-generated follow-up questions</h2><ul>${items.join('')}</ul></section>`;
 }
 
+function plainResumeText(line) {
+  return String(line).replace(/^\s*-\s*/, '').replace(/\*\*/g, '').replace(/\*/g, '').replace(/`/g, '').trim();
+}
+
+export function extractComparisonProfile(candidate) {
+  const sections = new Map();
+  let section = '';
+  const resume = String(candidate.resume || candidate.shortResume || '')
+    .replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n').replace(/\r\n?/g, '\n');
+
+  for (const line of resume.split('\n')) {
+    const heading = line.match(/^##\s+(.+?)\s*$/);
+    if (heading) {
+      section = heading[1].trim().toUpperCase();
+      sections.set(section, []);
+    } else if (section && line.trim() && line.trim() !== '---') {
+      sections.get(section).push(line.trim());
+    }
+  }
+
+  const linesFor = (name) => sections.get(name) ?? [];
+  const entriesFor = (name) => {
+    const entries = [];
+    for (const line of linesFor(name)) {
+      if (line.startsWith('- ')) {
+        if (entries.length && !entries.at(-1).detail) entries.at(-1).detail = plainResumeText(line);
+      } else {
+        entries.push({ title: plainResumeText(line), detail: '' });
+      }
+    }
+    return entries;
+  };
+
+  return {
+    summary: plainResumeText(linesFor('PROFESSIONAL SUMMARY')[0] ?? ''),
+    skills: linesFor('SKILLS').map((line) => {
+      const [label, ...detail] = plainResumeText(line).split(':');
+      return detail.length ? { label: label.trim(), detail: detail.join(':').trim() } : { label: '', detail: label.trim() };
+    }).filter(({ detail }) => detail),
+    experience: entriesFor('EXPERIENCE'),
+    projects: entriesFor('PROJECTS'),
+  };
+}
+
+function splitSkillItems(detail) {
+  const items = [];
+  let current = '';
+  let parentheses = 0;
+  for (const character of detail) {
+    if (character === '(') parentheses += 1;
+    if (character === ')') parentheses = Math.max(0, parentheses - 1);
+    if (character === ',' && parentheses === 0) {
+      if (current.trim()) items.push(current.trim());
+      current = '';
+    } else {
+      current += character;
+    }
+  }
+  if (current.trim()) items.push(current.trim());
+  return items;
+}
+
+export function buildComparisonModel(candidates) {
+  const members = candidates.map((candidate) => {
+    const profile = extractComparisonProfile(candidate);
+    const skillItems = profile.skills.flatMap(({ detail }) => splitSkillItems(detail));
+    const skills = [...new Map(skillItems.map((skill) => [skill.toLocaleLowerCase(), skill])).values()];
+    return {
+      candidate,
+      profile,
+      skills,
+      counts: { skills: skills.length, experience: profile.experience.length, projects: profile.projects.length },
+    };
+  });
+  const sharedSkills = members.length < 2 ? [] : members[0].skills.filter((skill) =>
+    members.every((member) => member.skills.some((item) => item.toLocaleLowerCase() === skill.toLocaleLowerCase())));
+  const sharedSkillKeys = new Set(sharedSkills.map((skill) => skill.toLocaleLowerCase()));
+  const comparedMembers = members.map((member) => {
+    return {
+      ...member,
+      nonSharedSkills: member.skills.filter((skill) => !sharedSkillKeys.has(skill.toLocaleLowerCase())),
+    };
+  });
+  return {
+    members: comparedMembers,
+    sharedSkills,
+    maxCounts: {
+      skills: Math.max(1, ...members.map(({ counts }) => counts.skills)),
+      experience: Math.max(1, ...members.map(({ counts }) => counts.experience)),
+      projects: Math.max(1, ...members.map(({ counts }) => counts.projects)),
+    },
+  };
+}
+
+export function renderComparisonBoard(candidates, comparisonState) {
+  if (!candidates.length) return `<div class="comparison-empty">
+    <span class="empty-state-mark" aria-hidden="true">✓</span>
+    <h3>No saved candidates yet</h3>
+    <p>Save candidates from Logs to compare their resume evidence here.</p>
+    <button class="button button-primary" type="button" data-return-to-logs>View logs</button>
+  </div>`;
+
+  const { members, sharedSkills, maxCounts } = buildComparisonModel(candidates);
+  const missing = '<span class="comparison-missing">Not listed in resume</span>';
+  const renderEvidence = (entries) => entries.length
+    ? `<ul class="comparison-evidence-list">${entries.slice(0, 2).map(({ title, detail }) => `<li><strong>${escapeHtml(title)}</strong>${detail ? `<span>${escapeHtml(detail)}</span>` : ''}</li>`).join('')}</ul>${entries.length > 2 ? `<p class="comparison-more">+${entries.length - 2} more in full resume</p>` : ''}`
+    : missing;
+  const renderRow = (label, valueForMember) => `<tr><th scope="row">${label}</th>${members.map((member) => `<td>${valueForMember(member)}</td>`).join('')}</tr>`;
+  const renderMetric = (member, key) => {
+    const count = member.counts[key];
+    const width = Math.round((count / maxCounts[key]) * 100);
+    return `<div class="evidence-meter"><span class="evidence-meter-track" aria-hidden="true"><span style="width:${width}%"></span></span><strong>${count}</strong></div>`;
+  };
+
+  return `${members.length === 1 ? '<p class="comparison-nudge">Save another candidate to compare shared and distinct resume evidence.</p>' : ''}
+    <section class="comparison-candidates" aria-label="Saved candidate decisions">
+      ${members.map(({ candidate }) => {
+        const name = escapeHtml(candidate.name || 'Candidate');
+        const id = escapeHtml(candidate.id);
+        const status = comparisonState.candidateStatuses?.[candidate.id];
+        return `<article class="comparison-candidate-card">
+          <div class="comparison-candidate-heading"><h3>${name}</h3><p>${escapeHtml(candidate.university || 'University not listed')} · ${escapeHtml(candidate.major || 'Major not listed')}</p></div>
+          <div class="candidate-status-bar" role="group" aria-label="Recruitment status for ${name}">${['continue', 'waitlist', 'decline'].map((outcome) => `<button class="candidate-status${status === outcome ? ' is-selected' : ''} is-${outcome}" type="button" aria-pressed="${status === outcome}" data-candidate-status="${outcome}" data-candidate-id="${id}">${outcome === 'continue' ? 'Continue' : outcome === 'waitlist' ? 'Waitlist' : 'Decline'}</button>`).join('')}</div>
+          <div class="comparison-card-actions"><button class="button button-secondary" type="button" data-view-resume="${id}" aria-label="Full resume for ${name}">Full resume</button>${comparisonState.transcriptIds?.includes(candidate.id) ? `<button class="button button-secondary" type="button" data-view-transcript="${id}" aria-label="View transcript for ${name}">Transcript</button>` : ''}<button class="comparison-remove" type="button" data-save="${id}" aria-label="Remove ${name} from saved candidates">Remove</button></div>
+        </article>`;
+      }).join('')}
+    </section>
+    <section class="comparison-panel" aria-labelledby="evidence-heading">
+      <div class="comparison-panel-heading"><div><p class="eyebrow">At a glance</p><h3 id="evidence-heading">Evidence overview</h3></div><p id="evidence-note">Bars count items documented in each resume, not candidate quality or fit.</p></div>
+      <div class="comparison-table-scroll" tabindex="0" aria-label="Scroll evidence chart horizontally">
+        <table class="evidence-chart" aria-describedby="evidence-note"><thead><tr><th scope="col">Candidate</th><th scope="col">Skills listed</th><th scope="col">Experience roles</th><th scope="col">Projects</th></tr></thead><tbody>
+          ${members.map((member) => `<tr><th scope="row">${escapeHtml(member.candidate.name || 'Candidate')}</th><td>${renderMetric(member, 'skills')}</td><td>${renderMetric(member, 'experience')}</td><td>${renderMetric(member, 'projects')}</td></tr>`).join('')}
+        </tbody></table>
+      </div>
+    </section>
+    <section class="comparison-panel" aria-labelledby="skills-comparison-heading">
+      <div class="comparison-panel-heading"><div><p class="eyebrow">Overlap and differences</p><h3 id="skills-comparison-heading">Skills comparison</h3></div><p>Only skills explicitly listed in the resumes are included.</p></div>
+      <div class="skill-contrast"><div class="shared-skills"><h4>Shared by every saved candidate</h4>${members.length < 2 ? '<p>Save another candidate to compare skills.</p>' : sharedSkills.length ? `<ul class="skill-tags">${sharedSkills.map((skill) => `<li>${escapeHtml(skill)}</li>`).join('')}</ul>` : '<p>No skills shared by every candidate.</p>'}</div>
+        <div class="nonshared-skills"><h4>${members.length < 2 ? 'Listed skills' : 'Skills not shared by everyone'}</h4>${members.map((member) => `<div><strong>${escapeHtml(member.candidate.name || 'Candidate')}</strong>${member.nonSharedSkills.length ? `<ul class="skill-tags">${member.nonSharedSkills.map((skill) => `<li>${escapeHtml(skill)}</li>`).join('')}</ul>` : `<p>${member.skills.length ? 'Only the shared skills shown at left.' : 'No skills listed in resume.'}</p>`}</div>`).join('')}</div>
+      </div>
+    </section>
+    <section class="comparison-panel" aria-labelledby="details-heading">
+      <div class="comparison-panel-heading"><h3 id="details-heading">Detailed comparison</h3><p>Scroll sideways to review every saved candidate.</p></div>
+      <div class="comparison-table-scroll" tabindex="0" aria-label="Scroll detailed comparison horizontally">
+        <table class="comparison-matrix"><thead><tr><th scope="col">Compare</th>${members.map(({ candidate }) => `<th scope="col"><span class="matrix-name">${escapeHtml(candidate.name || 'Candidate')}</span></th>`).join('')}</tr></thead><tbody>
+          ${renderRow('Profile', ({ profile }) => profile.summary ? escapeHtml(profile.summary) : missing)}
+          ${renderRow('Education', ({ candidate }) => `${escapeHtml(candidate.university || 'University not listed')}<br>${escapeHtml(candidate.major || 'Major not listed')}`)}
+          ${renderRow('Experience', ({ profile }) => renderEvidence(profile.experience))}
+          ${renderRow('Projects', ({ profile }) => renderEvidence(profile.projects))}
+        </tbody></table>
+      </div>
+    </section>`;
+}
+
 async function fetchCandidates() {
   const response = await fetch('/api/candidates');
   if (!response.ok) throw new Error('Candidate data could not be loaded.');
@@ -234,7 +409,7 @@ async function fetchCandidates() {
   };
 }
 
-const state = { activeView: 'logs', dataSource: 'live', savedIds: [], transcriptIds: [], transcriptTextByCandidate: {}, candidateStatuses: {}, filters: [], filterOptions: [], tagsByCandidate: {}, selectedCandidateId: null, resumeOpen: false, resumeClosing: false, isRecording: false, hasRecording: false, transcriptSaved: false };
+const state = { activeView: 'logs', dataSource: 'live', savedIds: [], transcriptIds: [], transcriptTextByCandidate: {}, candidateStatuses: {}, filters: [], filterOptions: [], customFilterOptions: [], tagsByCandidate: {}, selectedCandidateId: null, resumeOpen: false, resumeClosing: false, isRecording: false, hasRecording: false, transcriptSaved: false };
 let audioContext;
 let audioProcessor;
 let audioWebSocket;
@@ -451,18 +626,54 @@ async function sendCandidateEmail(event) {
 function setFilterStatus(message, isError = false) {
   const status = document.querySelector('[data-filter-status]');
   status.textContent = message;
+  status.setAttribute('role', isError ? 'alert' : 'status');
+  status.setAttribute('aria-live', isError ? 'assertive' : 'polite');
   status.classList.toggle('is-error', isError);
+}
+
+const customFiltersStorageKey = 'talentiq-custom-filters';
+
+function readCustomFilters() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(customFiltersStorageKey) ?? '[]');
+    return Array.isArray(saved)
+      ? saved.filter((item) => typeof item === 'string' && item.trim() && item.trim().length <= 200)
+        .reduce(addCustomFilterOption, [])
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistCustomFilters() {
+  try {
+    localStorage.setItem(customFiltersStorageKey, JSON.stringify(state.customFilterOptions));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function renderFilters() {
   document.querySelector('[data-clear-filters]').hidden = state.filters.length === 0;
-  document.querySelector('[data-filter-suggestions]').innerHTML = state.filterOptions.slice(0, 12).map(({ tag, count }) => {
-    const selected = state.filters.some((filter) => filter.tag === tag);
-    return `<button class="filter-chip" type="button" data-add-tag="${escapeHtml(tag)}" aria-pressed="${selected}" aria-label="Filter by ${escapeHtml(tag)}, ${count} ${count === 1 ? 'candidate' : 'candidates'}">${escapeHtml(tag)} <small>${count}</small></button>`;
+  document.querySelector('[data-filter-suggestions]').innerHTML = getFilterSuggestions(state.customFilterOptions, state.filterOptions).map(({ label, count, custom }) => {
+    const selected = state.filters.some((filter) => custom
+      ? filter.label.toLocaleLowerCase() === label.toLocaleLowerCase()
+      : filter.tag === label);
+    return custom
+      ? `<button class="filter-chip" type="button" data-add-custom-filter="${escapeHtml(label)}" aria-pressed="${selected}" aria-label="Apply saved filter ${escapeHtml(label)}">${escapeHtml(label)} <small>Saved</small></button>`
+      : `<button class="filter-chip" type="button" data-add-tag="${escapeHtml(label)}" aria-pressed="${selected}" aria-label="Filter by ${escapeHtml(label)}, ${count} ${count === 1 ? 'candidate' : 'candidates'}">${escapeHtml(label)} <small>${count}</small></button>`;
   }).join('');
   document.querySelector('[data-active-filters]').innerHTML = state.filters.map((filter, index) =>
     `<button class="filter-chip is-active" type="button" data-remove-filter="${index}" aria-label="Remove ${escapeHtml(filter.label)} filter">${escapeHtml(filter.label)} <span aria-hidden="true">×</span></button>`,
   ).join('');
+}
+
+function filterGuidance(view = state.activeView) {
+  if (view === 'saved') return 'Add a skill or experience above to narrow your saved comparison.';
+  return state.filterOptions.length || state.customFilterOptions.length
+    ? 'Suggested filters are based on evidence found in resumes. Missing tags do not mean a candidate lacks a skill.'
+    : 'No supported filter tags were found in these resumes. You can still describe a custom filter.';
 }
 
 async function loadFilterOptions() {
@@ -472,9 +683,7 @@ async function loadFilterOptions() {
     if (!response.ok) throw new Error(payload.error ?? 'Could not generate filters.');
     state.filterOptions = payload.options ?? [];
     state.tagsByCandidate = payload.tagsByCandidate ?? {};
-    setFilterStatus(state.filterOptions.length
-      ? 'Suggested filters are based on evidence found in resumes. Missing tags do not mean a candidate lacks a skill.'
-      : 'No supported filter tags were found in these resumes. You can still describe a custom filter.');
+    setFilterStatus(filterGuidance());
     renderFilters();
   } catch (error) {
     setFilterStatus(error.message || 'AI filters are unavailable right now.', true);
@@ -482,22 +691,34 @@ async function loadFilterOptions() {
 }
 
 function renderList() {
-  const visibleLogs = filterLogsBySelections(getLogsForView(checkIns, state, state.activeView), state.filters);
+  const visibleLogs = getVisibleLogsForView(checkIns, state);
   const title = state.activeView === 'saved' ? 'Saved candidates' : 'Check-in logs';
   const description = state.activeView === 'saved'
-    ? 'Candidates you flagged for follow-up from today’s career fair.'
+    ? 'Review your saved candidates side by side and decide who to follow up with.'
     : 'People who checked in at the TalentIQ career fair today.';
 
   document.querySelector('[data-view-title]').textContent = title;
   document.querySelector('[data-view-description]').textContent = description;
   document.querySelector('[data-log-count]').textContent = `${visibleLogs.length} ${visibleLogs.length === 1 ? 'person' : 'people'}`;
-  document.querySelector('[data-summary-caption]').textContent = countCaption(state.filters);
+  document.querySelector('[data-summary-caption]').textContent = state.activeView === 'saved' ? 'saved for review' : countCaption(state.filters);
   document.querySelector('[data-total-checkins]').textContent = checkIns.length;
   document.querySelector('[data-saved-count]').textContent = state.savedIds.length;
 
+  const savedView = state.activeView === 'saved';
+  const filterStatus = document.querySelector('[data-filter-status]');
+  if ([filterGuidance('saved'), filterGuidance('logs')].includes(filterStatus.textContent)) setFilterStatus(filterGuidance());
+  document.querySelector('[data-dashboard-screen]').classList.toggle('is-comparison-view', savedView);
+  document.querySelector('.filter-panel').hidden = savedView;
+  document.querySelector('.comparison-section').hidden = !savedView;
+  document.querySelector('.logs-section').hidden = savedView;
+  const skipLink = document.querySelector('.skip-link');
+  skipLink.href = savedView ? '#comparison-list' : '#candidate-list';
+  skipLink.textContent = savedView ? 'Skip to candidate comparison' : 'Skip to candidate list';
+  document.querySelector('[data-comparison-grid]').innerHTML = savedView ? renderComparisonBoard(visibleLogs, state) : '';
+
   const logList = document.querySelector('[data-log-list]');
-  logList.innerHTML = visibleLogs.map((log) => `
-    <article class="log-row${state.activeView === 'saved' ? ' is-saved' : ''}" role="row">
+  logList.innerHTML = savedView ? '' : visibleLogs.map((log) => `
+    <div class="log-row${state.activeView === 'saved' ? ' is-saved' : ''}" role="row">
       <div class="person-cell" role="cell">
         <span class="avatar" aria-hidden="true">${escapeHtml(log.initials)}</span>
         <div>
@@ -524,7 +745,7 @@ function renderList() {
           ${state.activeView === 'saved' ? 'Remove' : 'Save'}
         </button>
       </div>
-    </article>
+    </div>
   `).join('') || `
     <div class="empty-state" role="row">
       <div role="cell" aria-colspan="3">
@@ -702,6 +923,7 @@ function closeResume() {
   state.resumeOpen = false;
   state.resumeClosing = true;
   renderRecord();
+  document.querySelector('[data-toggle-recording]').focus();
 
   const drawer = document.querySelector('[data-resume-drawer]');
   drawer.addEventListener('transitionend', (event) => {
@@ -820,8 +1042,46 @@ async function handleRecording() {
   }
 }
 
+async function applyCustomFilter(query, control, input) {
+  if (state.filters.some((filter) => filter.label.toLocaleLowerCase() === query.toLocaleLowerCase())) {
+    setFilterStatus(`“${query}” is already active.`);
+    document.querySelector('[data-filter-input]').focus();
+    return;
+  }
+
+  control.disabled = true;
+  setFilterStatus(`Finding resume evidence for “${query}”…`);
+  try {
+    const response = await fetch('/api/filter-query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query }),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error ?? 'Could not apply this filter.');
+    state.filters.push({ label: query, ids: payload.ids ?? [] });
+    state.customFilterOptions = addCustomFilterOption(state.customFilterOptions, query);
+    const persisted = persistCustomFilters();
+    if (input) input.value = '';
+    setFilterStatus(persisted
+      ? `Added “${query}” and saved it to your filters.`
+      : `Added “${query}”, but this browser could not save it for later.`, !persisted);
+    renderList();
+    document.querySelector('[data-filter-input]').focus();
+  } catch (error) {
+    setFilterStatus(error.message || 'Could not apply this filter.', true);
+  } finally {
+    control.disabled = false;
+  }
+}
+
 function startDashboard() {
+  state.customFilterOptions = readCustomFilters();
   document.querySelector('[data-toggle-recording]').addEventListener('click', handleRecording);
+  document.querySelector('[data-filter-input]').addEventListener('input', (event) => {
+    event.currentTarget.removeAttribute('aria-invalid');
+    if (document.querySelector('[data-filter-status]').classList.contains('is-error')) setFilterStatus('');
+  });
   const emailDialog = document.querySelector('[data-email-dialog]');
   emailDialog.querySelector('[data-email-close]').addEventListener('click', () => emailDialog.close());
   emailDialog.querySelector('[data-connect-gmail]').addEventListener('click', connectGmail);
@@ -837,39 +1097,28 @@ function startDashboard() {
       .find((button) => button.dataset.candidateId === candidateId && button.dataset.candidateStatus === outcome)?.focus();
   });
 
-  document.querySelector('[data-filter-form]').addEventListener('submit', async (event) => {
+  document.querySelector('[data-filter-form]').addEventListener('submit', (event) => {
     event.preventDefault();
     const input = document.querySelector('[data-filter-input]');
     const button = document.querySelector('[data-filter-submit]');
     const query = input.value.trim();
     if (!query) {
       setFilterStatus('Enter a skill or experience to filter by.', true);
+      input.setAttribute('aria-invalid', 'true');
       input.focus();
       return;
     }
-    button.disabled = true;
-    setFilterStatus(`Finding resume evidence for “${query}”…`);
-    try {
-      const response = await fetch('/api/filter-query', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query }),
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error ?? 'Could not apply this filter.');
-      state.filters.push({ label: query, ids: payload.ids ?? [] });
-      input.value = '';
-      setFilterStatus(`Added “${query}” based on resume evidence.`);
-      renderList();
-      input.focus();
-    } catch (error) {
-      setFilterStatus(error.message || 'Could not apply this filter.', true);
-    } finally {
-      button.disabled = false;
-    }
+    input.removeAttribute('aria-invalid');
+    applyCustomFilter(query, button, input);
   });
 
   document.addEventListener('click', (event) => {
+    const customButton = event.target.closest('[data-add-custom-filter]');
+    if (customButton) {
+      applyCustomFilter(customButton.dataset.addCustomFilter, customButton);
+      return;
+    }
+
     const tagButton = event.target.closest('[data-add-tag]');
     if (tagButton) {
       const tag = tagButton.dataset.addTag;
