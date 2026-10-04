@@ -5,13 +5,219 @@ import { useRouter } from "next/navigation";
 import { UploadCloud, FileText, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { useDropzone } from "react-dropzone";
-import { submitCheckin } from "@/app/actions";
+import { submitCheckinServer } from "./actions";
+
+const universitySuggestions = [
+  "Arkansas State University",
+  "Arizona State University",
+  "Auburn University",
+  "Baylor University",
+  "Georgia Institute of Technology",
+  "Kansas State University",
+  "Massachusetts Institute of Technology",
+  "Michigan State University",
+  "Missouri State University",
+  "New York University",
+  "Ohio State University",
+  "Oklahoma State University",
+  "Pennsylvania State University",
+  "Purdue University",
+  "Texas A&M University",
+  "Texas Tech University",
+  "University of Alabama",
+  "University of Arkansas",
+  "University of Arkansas at Little Rock",
+  "University of California, Berkeley",
+  "University of California, Los Angeles",
+  "University of Central Arkansas",
+  "University of Georgia",
+  "University of Houston",
+  "University of Kansas",
+  "University of Memphis",
+  "University of Missouri",
+  "University of North Texas",
+  "University of Oklahoma",
+  "University of Southern California",
+  "University of Tennessee",
+  "University of Texas at Austin",
+  "University of Texas at Dallas",
+];
+
+const universityAliases: Record<string, string[]> = {
+  "Georgia Institute of Technology": ["Georgia Tech", "GT"],
+  "Massachusetts Institute of Technology": ["MIT"],
+  "New York University": ["NYU"],
+  "Ohio State University": ["OSU"],
+  "Pennsylvania State University": ["Penn State"],
+  "Texas A&M University": ["TAMU", "Texas A and M"],
+  "University of Arkansas": ["UARK", "U of A"],
+  "University of California, Berkeley": ["UC Berkeley", "Cal"],
+  "University of California, Los Angeles": ["UCLA"],
+  "University of Georgia": ["UGA"],
+  "University of Missouri": ["Mizzou"],
+  "University of Southern California": ["USC"],
+  "University of Texas at Austin": ["UT Austin", "UT"],
+  "University of Texas at Dallas": ["UTD"],
+};
+
+const majorSuggestions = [
+  "Accounting",
+  "Business Administration",
+  "Business Analytics",
+  "Chemical Engineering",
+  "Civil Engineering",
+  "Communications",
+  "Computer Engineering",
+  "Computer Science",
+  "Cybersecurity",
+  "Data Science",
+  "Economics",
+  "Electrical Engineering",
+  "Finance",
+  "Human Resources",
+  "Industrial Engineering",
+  "Information Systems",
+  "Information Technology",
+  "Logistics",
+  "Management",
+  "Marketing",
+  "Mathematics",
+  "Mechanical Engineering",
+  "Operations Management",
+  "Psychology",
+  "Software Engineering",
+  "Supply Chain Management",
+];
+
+function SuggestionField({
+  id,
+  label,
+  value,
+  onChange,
+  options,
+  aliases,
+  placeholder,
+  disabled,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: string[];
+  aliases?: Record<string, string[]>;
+  placeholder: string;
+  disabled: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const query = value.trim().toLowerCase();
+  const searchRank = (option: string) => {
+    const name = option.toLowerCase();
+    if (name === query) return Infinity;
+
+    const initials = aliases
+      ? option.match(/[a-z]+/gi)?.filter(word => !["of", "at", "the", "and"].includes(word.toLowerCase())).map(word => word[0]).join("").toLowerCase()
+      : undefined;
+    const shortForms = [initials, ...(aliases?.[option] ?? [])].filter((term): term is string => Boolean(term)).map(term => term.toLowerCase());
+
+    if (shortForms.some(term => term === query)) return 0;
+    if (name.startsWith(query)) return 1;
+    if (query.length > 1 && shortForms.some(term => term.startsWith(query))) return 2;
+    return name.includes(query) ? 3 : Infinity;
+  };
+  const matches = query
+    ? options.map(option => ({ option, rank: searchRank(option) }))
+        .filter(result => Number.isFinite(result.rank))
+        .sort((a, b) => a.rank - b.rank || a.option.localeCompare(b.option))
+        .slice(0, 6)
+        .map(result => result.option)
+    : [];
+  const showSuggestions = open && !disabled && matches.length > 0;
+  const listId = `${id}-suggestions`;
+
+  const chooseOption = (option: string) => {
+    onChange(option);
+    setOpen(false);
+    setActiveIndex(-1);
+  };
+
+  return (
+    <div
+      className="flex min-w-0 flex-col group"
+      onBlur={event => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setOpen(false);
+          setActiveIndex(-1);
+        }
+      }}
+    >
+      <label htmlFor={id} className="text-[11px] sm:text-xs font-bold text-jbh-black uppercase tracking-wide mb-1 group-focus-within:text-jbh-black transition-colors">
+        {label}
+      </label>
+      <input
+        id={id}
+        value={value}
+        onChange={event => {
+          onChange(event.target.value);
+          setOpen(true);
+          setActiveIndex(-1);
+        }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={event => {
+          if (event.key === "Escape") {
+            setOpen(false);
+            setActiveIndex(-1);
+          } else if (showSuggestions && event.key === "ArrowDown") {
+            event.preventDefault();
+            setActiveIndex(index => (index + 1) % matches.length);
+          } else if (showSuggestions && event.key === "ArrowUp") {
+            event.preventDefault();
+            setActiveIndex(index => index <= 0 ? matches.length - 1 : index - 1);
+          } else if (showSuggestions && event.key === "Enter" && activeIndex >= 0) {
+            event.preventDefault();
+            chooseOption(matches[activeIndex]);
+          }
+        }}
+        disabled={disabled}
+        required
+        autoComplete="off"
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded={showSuggestions}
+        aria-controls={listId}
+        aria-activedescendant={showSuggestions && activeIndex >= 0 ? `${id}-option-${activeIndex}` : undefined}
+        placeholder={placeholder}
+        className="w-full bg-[#f9f9f9] border border-[#A0A0A0] rounded-sm px-4 py-3 sm:py-3.5 text-base sm:text-sm text-jbh-black placeholder:text-jbh-gray focus:outline-none focus:border-jbh-black focus:ring-1 focus:ring-jbh-black transition-all peer"
+      />
+      {showSuggestions && (
+        <div id={listId} role="listbox" aria-label={`${label} suggestions`} className="mt-1 max-h-52 overflow-y-auto rounded-sm border-l-4 border-jbh-yellow bg-jbh-black py-1">
+          {matches.map((option, index) => (
+            <button
+              id={`${id}-option-${index}`}
+              key={option}
+              type="button"
+              role="option"
+              aria-selected={activeIndex === index}
+              onMouseEnter={() => setActiveIndex(index)}
+              onClick={() => chooseOption(option)}
+              className={`block w-full px-4 py-2.5 text-left text-sm font-semibold transition-colors ${activeIndex === index ? "bg-jbh-yellow text-jbh-black" : "text-white hover:bg-jbh-yellow hover:text-jbh-black"}`}
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function CheckinPage() {
   const router = useRouter();
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
+  const [university, setUniversity] = useState("");
+  const [major, setMajor] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<"idle" | "submitting" | "success" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
@@ -24,11 +230,16 @@ export default function CheckinPage() {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
+    onDropRejected: () => {
+      setStatus("error");
+      setErrorMessage("Resume must be a PDF or DOCX file no larger than 8 MB.");
+    },
     accept: {
       'application/pdf': ['.pdf'],
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx']
     },
     maxFiles: 1,
+    maxSize: 8 * 1024 * 1024,
     disabled: status === "submitting" || status === "success"
   });
 
@@ -44,23 +255,27 @@ export default function CheckinPage() {
 
     try {
       const formData = new FormData();
-      formData.append("firstName", firstName);
-      formData.append("lastName", lastName);
-      formData.append("email", email);
-      formData.append("file", file);
+      formData.append("resume", file);
 
-      const result = await submitCheckin(formData);
+      const result = await submitCheckinServer({
+        firstName,
+        lastName,
+        email: email,
+        university: university,
+        major: major,
+      }, formData);
 
       if (!result.success) {
-        throw new Error(result.error);
+        setStatus("error");
+        setErrorMessage(result.error ?? "Could not save response. Please try again.");
+        return;
       }
 
       setStatus("success");
       setTimeout(() => router.push("/success"), 800);
-    } catch (error: any) {
-      console.error("Submission error:", error);
+    } catch (error) {
       setStatus("error");
-      setErrorMessage(error.message || "An error occurred during submission.");
+      setErrorMessage(error instanceof Error ? error.message : "An error occurred during submission.");
     }
   };
 
@@ -134,6 +349,11 @@ export default function CheckinPage() {
                 />
               </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 sm:gap-6">
+                <SuggestionField id="university" label="University" value={university} onChange={setUniversity} options={universitySuggestions} aliases={universityAliases} placeholder="Enter your university" disabled={status === "submitting" || status === "success"} />
+                <SuggestionField id="major" label="Major" value={major} onChange={setMajor} options={majorSuggestions} placeholder="Enter your major" disabled={status === "submitting" || status === "success"} />
+              </div>
+
               <div className="flex flex-col relative group pt-4 sm:pt-6">
                 <label className="text-[11px] sm:text-xs font-bold text-jbh-black uppercase tracking-wide flex justify-between mb-1">
                   Resume Upload
@@ -147,7 +367,7 @@ export default function CheckinPage() {
                     <span className={`inline-block bg-jbh-black text-white px-5 py-2 rounded-full text-xs font-bold mb-2 uppercase transition-colors ${isDragActive ? 'bg-jbh-yellow text-jbh-black' : 'group-hover/upload:bg-jbh-yellow group-hover/upload:text-jbh-black'}`}>
                       {isDragActive ? "Drop File Here" : "Select File"}
                     </span>
-                    <span className="text-xs font-medium text-jbh-black/60">PDF or DOCX format. Drag & drop allowed.</span>
+                    <span className="text-xs font-medium text-jbh-black/60">PDF or DOCX, up to 8 MB. Drag & drop allowed.</span>
                   </div>
                 ) : (
                   <div className="flex items-center justify-between p-3 sm:p-4 border-2 border-jbh-black bg-jbh-yellow/5 rounded-sm">
