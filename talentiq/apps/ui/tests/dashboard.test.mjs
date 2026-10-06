@@ -72,6 +72,38 @@ test('the result count identifies filtered matches instead of calling them check
   assert.equal(dashboard.countCaption([{ label: 'Python', ids: ['ava-patel'] }]), 'matching filters');
 });
 
+test('job titles use any relevant generated resume tag and combine with manual filters', () => {
+  const candidates = [
+    { id: 'ava-patel' }, { id: 'marcus-lee' }, { id: 'sofia-ramirez' },
+  ];
+  const generated = [{ tag: 'Python', count: 1 }, { tag: 'API development', count: 1 }, { tag: 'SQL', count: 1 }];
+  const tags = {
+    'ava-patel': ['Python'],
+    'marcus-lee': ['API development'],
+    'sofia-ramirez': ['SQL'],
+  };
+  const roleFilter = dashboard.getJobTitleFilter('software-engineer', generated, tags);
+
+  assert.deepEqual(roleFilter.tags, ['Python', 'API development']);
+  assert.deepEqual(roleFilter.ids, ['ava-patel', 'marcus-lee']);
+  assert.deepEqual(dashboard.getVisibleLogsForView(candidates, {
+    activeView: 'logs', savedIds: [], filters: [], roleFilter,
+  }).map(({ id }) => id), ['ava-patel', 'marcus-lee']);
+  assert.deepEqual(dashboard.getVisibleLogsForView(candidates, {
+    activeView: 'logs', savedIds: [], filters: [{ label: 'Python project', ids: ['ava-patel'] }], roleFilter,
+  }).map(({ id }) => id), ['ava-patel']);
+  assert.equal(dashboard.countCaption([], roleFilter), 'matching filters');
+});
+
+test('a role with no matching generated tags shows no candidates', () => {
+  const roleFilter = dashboard.getJobTitleFilter('product-manager', [{ tag: 'SQL', count: 1 }], { ava: ['SQL'] });
+  assert.deepEqual(roleFilter.tags, []);
+  assert.deepEqual(dashboard.getVisibleLogsForView([{ id: 'ava' }], {
+    activeView: 'logs', savedIds: [], filters: [], roleFilter,
+  }), []);
+  assert.equal(dashboard.getJobTitleFilter('unknown', [], {}), null);
+});
+
 test('a custom filter is saved once and stays visible with generated suggestions', () => {
   const saved = dashboard.addCustomFilterOption(['API experience'], '  python projects  ');
   const repeated = dashboard.addCustomFilterOption(saved, 'PYTHON PROJECTS');
@@ -89,7 +121,7 @@ test('a custom filter is saved once and stays visible with generated suggestions
 });
 
 test('Saved compares every saved candidate even when a Logs filter is active', () => {
-  const state = { activeView: 'saved', savedIds: ['ava-patel', 'marcus-lee'], filters: [{ label: 'Python', ids: ['ava-patel'] }] };
+  const state = { activeView: 'saved', savedIds: ['ava-patel', 'marcus-lee'], filters: [{ label: 'Python', ids: ['ava-patel'] }], roleFilter: { ids: ['ava-patel'] } };
 
   assert.deepEqual(dashboard.getVisibleLogsForView(logs, state).map(({ id }) => id), ['ava-patel', 'marcus-lee']);
 });

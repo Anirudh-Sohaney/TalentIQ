@@ -18,7 +18,7 @@ python3 -m venv .venv
 .venv/bin/python -m pip install --cache-dir .cache/pip --no-deps --no-build-isolation -e .
 .venv/bin/python scripts/setup_models.py
 HF_HUB_OFFLINE=1 .venv/bin/python -m voice_filtering \
-  --host 127.0.0.1 --port 8765 --model models/faster-whisper-tiny.en
+  --host 127.0.0.1 --port 8765 --model models/faster-whisper-small.en
 ```
 
 Open `http://127.0.0.1:8765`. Select microphone, optionally enable short WAV

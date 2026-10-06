@@ -20,11 +20,33 @@ export function filterLogsBySelections(logs, filters) {
 
 export function getVisibleLogsForView(logs, viewState) {
   const candidates = getLogsForView(logs, viewState, viewState.activeView);
-  return viewState.activeView === 'saved' ? candidates : filterLogsBySelections(candidates, viewState.filters ?? []);
+  return viewState.activeView === 'saved' ? candidates : filterLogsBySelections(candidates, [
+    ...(viewState.filters ?? []),
+    ...(viewState.roleFilter ? [viewState.roleFilter] : []),
+  ]);
 }
 
-export function countCaption(filters) {
-  return filters.length ? 'matching filters' : 'checked in';
+export function countCaption(filters, roleFilter = null) {
+  return filters.length || roleFilter ? 'matching filters' : 'checked in';
+}
+
+export const jobTitleProfiles = Object.freeze([
+  { id: 'software-engineer', label: 'Software Engineer', tags: ['software engineering', 'software development lifecycle', 'programming', 'Python', 'Java', 'JavaScript', 'TypeScript', 'C++', 'data structures and algorithms', 'object-oriented programming', 'web development', 'API development', 'Git and version control', 'software testing', 'debugging', 'code review', 'academic software project', 'personal software project', 'open-source contribution'] },
+  { id: 'data-analyst', label: 'Data Analyst', tags: ['data analysis', 'SQL', 'Python', 'pandas', 'databases', 'machine learning'] },
+  { id: 'product-manager', label: 'Product Manager', tags: ['product management', 'product ownership', 'product thinking', 'product development', 'product requirements', 'requirements gathering', 'user stories', 'product backlog', 'backlog prioritization', 'roadmap planning', 'stakeholder management', 'customer research', 'user feedback'] },
+  { id: 'business-analyst', label: 'Business Analyst', tags: ['business analysis', 'process improvement', 'requirements gathering', 'stakeholder management', 'data analysis', 'SQL', 'user stories'] },
+]);
+
+export function getJobTitleFilter(roleId, generatedOptions, tagsByCandidate) {
+  const profile = jobTitleProfiles.find(({ id }) => id === roleId);
+  if (!profile) return null;
+  const available = new Set(generatedOptions.map(({ tag }) => tag));
+  const tags = profile.tags.filter((tag) => available.has(tag));
+  const matchingTags = new Set(tags);
+  const ids = Object.entries(tagsByCandidate)
+    .filter(([, candidateTags]) => Array.isArray(candidateTags) && candidateTags.some((tag) => matchingTags.has(tag)))
+    .map(([id]) => id);
+  return { id: profile.id, label: profile.label, tags, ids };
 }
 
 export function addCustomFilterOption(options, query) {
@@ -409,7 +431,7 @@ async function fetchCandidates() {
   };
 }
 
-const state = { activeView: 'logs', dataSource: 'live', savedIds: [], transcriptIds: [], transcriptTextByCandidate: {}, candidateStatuses: {}, filters: [], filterOptions: [], customFilterOptions: [], tagsByCandidate: {}, selectedCandidateId: null, resumeOpen: false, resumeClosing: false, isRecording: false, hasRecording: false, transcriptSaved: false };
+const state = { activeView: 'logs', dataSource: 'live', savedIds: [], transcriptIds: [], transcriptTextByCandidate: {}, candidateStatuses: {}, filters: [], roleFilter: null, filterOptions: [], customFilterOptions: [], tagsByCandidate: {}, selectedCandidateId: null, resumeOpen: false, resumeClosing: false, isRecording: false, hasRecording: false, transcriptSaved: false };
 let audioContext;
 let audioProcessor;
 let audioWebSocket;
@@ -655,18 +677,26 @@ function persistCustomFilters() {
 }
 
 function renderFilters() {
-  document.querySelector('[data-clear-filters]').hidden = state.filters.length === 0;
+  document.querySelector('[data-clear-filters]').hidden = state.filters.length === 0 && !state.roleFilter;
+  document.querySelector('[data-job-title]').value = state.roleFilter?.id ?? '';
+  document.querySelector('[data-job-title-detail]').textContent = state.roleFilter
+    ? state.roleFilter.tags.length
+      ? `Matches any of ${state.roleFilter.tags.length} generated resume filters: ${state.roleFilter.tags.join(', ')}.`
+      : 'No generated resume filters match this job title in the current resumes.'
+    : 'Choose a title to match candidates by relevant generated resume filters.';
   document.querySelector('[data-filter-suggestions]').innerHTML = getFilterSuggestions(state.customFilterOptions, state.filterOptions).map(({ label, count, custom }) => {
     const selected = state.filters.some((filter) => custom
       ? filter.label.toLocaleLowerCase() === label.toLocaleLowerCase()
-      : filter.tag === label);
+      : filter.tag === label) || (!custom && state.roleFilter?.tags.includes(label));
     return custom
       ? `<button class="filter-chip" type="button" data-add-custom-filter="${escapeHtml(label)}" aria-pressed="${selected}" aria-label="Apply saved filter ${escapeHtml(label)}">${escapeHtml(label)} <small>Saved</small></button>`
       : `<button class="filter-chip" type="button" data-add-tag="${escapeHtml(label)}" aria-pressed="${selected}" aria-label="Filter by ${escapeHtml(label)}, ${count} ${count === 1 ? 'candidate' : 'candidates'}">${escapeHtml(label)} <small>${count}</small></button>`;
   }).join('');
-  document.querySelector('[data-active-filters]').innerHTML = state.filters.map((filter, index) =>
+  document.querySelector('[data-active-filters]').innerHTML = `${state.roleFilter
+    ? `<button class="filter-chip is-active" type="button" data-remove-role aria-label="Remove ${escapeHtml(state.roleFilter.label)} job title filter">${escapeHtml(state.roleFilter.label)} · any relevant filter <span aria-hidden="true">×</span></button>`
+    : ''}${state.filters.map((filter, index) =>
     `<button class="filter-chip is-active" type="button" data-remove-filter="${index}" aria-label="Remove ${escapeHtml(filter.label)} filter">${escapeHtml(filter.label)} <span aria-hidden="true">×</span></button>`,
-  ).join('');
+  ).join('')}`;
 }
 
 function filterGuidance(view = state.activeView) {
@@ -683,15 +713,19 @@ async function loadFilterOptions() {
     if (!response.ok) throw new Error(payload.error ?? 'Could not generate filters.');
     state.filterOptions = payload.options ?? [];
     state.tagsByCandidate = payload.tagsByCandidate ?? {};
+    document.querySelector('[data-job-title]').disabled = false;
+    if (state.roleFilter) state.roleFilter = getJobTitleFilter(state.roleFilter.id, state.filterOptions, state.tagsByCandidate);
     setFilterStatus(filterGuidance());
     renderFilters();
   } catch (error) {
+    document.querySelector('[data-job-title-detail]').textContent = 'Job title matching is unavailable until resume filters load.';
     setFilterStatus(error.message || 'AI filters are unavailable right now.', true);
   }
 }
 
 function renderList() {
   const visibleLogs = getVisibleLogsForView(checkIns, state);
+  const hasActiveLogFilters = state.activeView !== 'saved' && Boolean(state.filters.length || state.roleFilter);
   const title = state.activeView === 'saved' ? 'Saved candidates' : 'Check-in logs';
   const description = state.activeView === 'saved'
     ? 'Review your saved candidates side by side and decide who to follow up with.'
@@ -700,7 +734,7 @@ function renderList() {
   document.querySelector('[data-view-title]').textContent = title;
   document.querySelector('[data-view-description]').textContent = description;
   document.querySelector('[data-log-count]').textContent = `${visibleLogs.length} ${visibleLogs.length === 1 ? 'person' : 'people'}`;
-  document.querySelector('[data-summary-caption]').textContent = state.activeView === 'saved' ? 'saved for review' : countCaption(state.filters);
+  document.querySelector('[data-summary-caption]').textContent = state.activeView === 'saved' ? 'saved for review' : countCaption(state.filters, state.roleFilter);
   document.querySelector('[data-total-checkins]').textContent = checkIns.length;
   document.querySelector('[data-saved-count]').textContent = state.savedIds.length;
 
@@ -750,9 +784,9 @@ function renderList() {
     <div class="empty-state" role="row">
       <div role="cell" aria-colspan="3">
         <span class="empty-state-mark" aria-hidden="true">✓</span>
-        <h2>${state.filters.length ? 'No candidates match these filters' : state.activeView === 'saved' ? 'No saved candidates yet' : 'No check-ins available'}</h2>
-        <p>${state.filters.length ? 'Try removing a filter or describing a different skill or experience.' : state.activeView === 'saved' ? 'Use Save on a check-in to keep a candidate handy for follow-up.' : 'Candidate check-ins will appear here when they are available.'}</p>
-        ${state.filters.length ? '<button class="button button-primary" type="button" data-clear-filters>Clear filters</button>' : state.activeView === 'saved' ? '<button class="button button-primary" type="button" data-return-to-logs>View logs</button>' : ''}
+        <h2>${hasActiveLogFilters ? 'No candidates match these filters' : state.activeView === 'saved' ? 'No saved candidates yet' : 'No check-ins available'}</h2>
+        <p>${hasActiveLogFilters ? 'Try removing a filter or choosing a different job title.' : state.activeView === 'saved' ? 'Use Save on a check-in to keep a candidate handy for follow-up.' : 'Candidate check-ins will appear here when they are available.'}</p>
+        ${hasActiveLogFilters ? '<button class="button button-primary" type="button" data-clear-filters>Clear filters</button>' : state.activeView === 'saved' ? '<button class="button button-primary" type="button" data-return-to-logs>View logs</button>' : ''}
       </div>
     </div>
   `;
@@ -1078,6 +1112,10 @@ async function applyCustomFilter(query, control, input) {
 function startDashboard() {
   state.customFilterOptions = readCustomFilters();
   document.querySelector('[data-toggle-recording]').addEventListener('click', handleRecording);
+  document.querySelector('[data-job-title]').addEventListener('change', (event) => {
+    state.roleFilter = getJobTitleFilter(event.currentTarget.value, state.filterOptions, state.tagsByCandidate);
+    renderList();
+  });
   document.querySelector('[data-filter-input]').addEventListener('input', (event) => {
     event.currentTarget.removeAttribute('aria-invalid');
     if (document.querySelector('[data-filter-status]').classList.contains('is-error')) setFilterStatus('');
@@ -1122,6 +1160,10 @@ function startDashboard() {
     const tagButton = event.target.closest('[data-add-tag]');
     if (tagButton) {
       const tag = tagButton.dataset.addTag;
+      if (state.roleFilter?.tags.includes(tag)) {
+        setFilterStatus(`“${tag}” is already included in the ${state.roleFilter.label} job title match.`);
+        return;
+      }
       if (!state.filters.some((filter) => filter.tag === tag)) {
         const ids = Object.entries(state.tagsByCandidate).filter(([, tags]) => tags.includes(tag)).map(([id]) => id);
         state.filters.push({ label: tag, tag, ids });
@@ -1140,8 +1182,16 @@ function startDashboard() {
       return;
     }
 
+    if (event.target.closest('[data-remove-role]')) {
+      state.roleFilter = null;
+      renderList();
+      document.querySelector('[data-job-title]').focus();
+      return;
+    }
+
     if (event.target.closest('[data-clear-filters]')) {
       state.filters = [];
+      state.roleFilter = null;
       renderList();
       document.querySelector('[data-filter-input]').focus();
       return;

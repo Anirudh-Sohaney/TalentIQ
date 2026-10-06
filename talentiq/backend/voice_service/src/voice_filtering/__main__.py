@@ -13,7 +13,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Voice Filtering M0 Baseline")
     parser.add_argument("--host", default="127.0.0.1", help="Bind host (M0: loopback only)")
     parser.add_argument("--port", type=int, default=8765, help="Bind port")
-    parser.add_argument("--model", default="models/faster-whisper-tiny.en", help="Model path")
+    parser.add_argument("--model", default="models/faster-whisper-small.en", help="Model path")
     parser.add_argument("--dev-recording", action="store_true", help="Enable dev recording")
     args = parser.parse_args()
 

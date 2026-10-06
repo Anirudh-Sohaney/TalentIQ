@@ -61,6 +61,17 @@
             </div>
             <button class="filter-clear" type="button" data-clear-filters hidden>Clear filters</button>
           </div>
+          <div class="job-title-filter">
+            <label for="job-title-filter">Match a job title</label>
+            <select id="job-title-filter" data-job-title disabled aria-describedby="job-title-detail">
+              <option value="">All job titles</option>
+              <option value="software-engineer">Software Engineer</option>
+              <option value="data-analyst">Data Analyst</option>
+              <option value="product-manager">Product Manager</option>
+              <option value="business-analyst">Business Analyst</option>
+            </select>
+            <p id="job-title-detail" data-job-title-detail>Job title matches use generated resume filters. Loading filters…</p>
+          </div>
           <form class="filter-form" data-filter-form>
             <label for="candidate-filter-input">Describe what you’re looking for</label>
             <div class="filter-form-row">

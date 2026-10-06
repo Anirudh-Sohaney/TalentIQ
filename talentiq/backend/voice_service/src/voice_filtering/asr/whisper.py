@@ -23,7 +23,7 @@ INGRESS_CAP = 100
 UTTERANCE_MAX_S = 8.0
 UTTERANCE_PREROLL_S = 0.2
 UTTERANCE_END_SILENCE_S = 0.6
-SPEECH_THRESHOLD_DBFS = -52.0
+SPEECH_THRESHOLD_DBFS = -45.0
 PARTIAL_CADENCE_S = 0.75
 PARTIAL_MIN_S = 1.0
 FINAL_QUEUE_CAP = 4
@@ -77,20 +77,25 @@ class WhisperASR:
     def load_error(self) -> str | None:
         return self._load_error
 
-    def decode(self, pcm16k: np.ndarray) -> str:
+    def decode(self, pcm16k: np.ndarray, prompt: str = "") -> str:
         if not self._loaded or self._model is None:
             raise RuntimeError("Model not loaded")
         pcm = np.asarray(pcm16k, dtype=np.float32)
         if len(pcm) == 0:
             return ""
-        segments, info = self._model.transcribe(
-            pcm,
-            language="en",
-            beam_size=1,
-            temperature=0,
-            condition_on_previous_text=False,
-            vad_filter=True,
-        )
+        
+        kwargs = {
+            "language": "en",
+            "beam_size": 1,
+            "temperature": 0.0,
+            "condition_on_previous_text": False,
+            "vad_filter": True,
+            "no_speech_threshold": 0.6,
+            "log_prob_threshold": -1.0,
+            "compression_ratio_threshold": 2.4,
+        }
+
+        segments, info = self._model.transcribe(pcm, **kwargs)
         text_parts = []
         for segment in segments:
             text_parts.append(segment.text.strip())

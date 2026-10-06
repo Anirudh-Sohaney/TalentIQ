@@ -10,7 +10,7 @@ class RecordingTranscriber:
     def __init__(self):
         self.inputs = []
 
-    def decode(self, pcm):
+    def decode(self, pcm, prompt=""):
         self.inputs.append(pcm.copy())
         return "heard speech"
 
@@ -48,7 +48,7 @@ class ASRSchedulerSpeechTests(unittest.TestCase):
 
     def test_soft_speech_starts_with_prior_quiet_frames(self):
         self.push(0.001, 50)
-        self.push(0.004, 30)
+        self.push(0.01, 30)
         self.scheduler.finish()
         self.assertEqual(len(self.events), 1)
         self.assertEqual(len(self.transcriber.inputs[0]), 50 * 160)

@@ -7,16 +7,6 @@ const demoCheckIns = [
   ['sofia-ramirez', 'Sofia Ramirez', '9:18 AM', 'University of Texas at Dallas', 'Business Analytics'],
   ['elijah-brooks', 'Elijah Brooks', '9:26 AM', 'University of Missouri', 'Industrial Engineering'],
   ['nora-kim', 'Nora Kim', '9:34 AM', 'Kansas State University', 'Information Systems'],
-  ['daniel-wright', 'Daniel Wright', '9:42 AM', 'University of Arkansas', 'Finance'],
-  ['maya-johnson', 'Maya Johnson', '9:55 AM', 'Texas Christian University', 'Marketing'],
-  ['owen-nguyen', 'Owen Nguyen', '10:07 AM', 'University of Oklahoma', 'Computer Engineering'],
-  ['isabella-martin', 'Isabella Martin', '10:16 AM', 'University of Kansas', 'Human Resources'],
-  ['theo-adams', 'Theo Adams', '10:23 AM', 'Arkansas State University', 'Logistics'],
-  ['priya-shah', 'Priya Shah', '10:35 AM', 'University of North Texas', 'Data Science'],
-  ['caleb-turner', 'Caleb Turner', '10:47 AM', 'University of Tulsa', 'Mechanical Engineering'],
-  ['zoe-wilson', 'Zoe Wilson', '11:02 AM', 'Missouri State University', 'Communications'],
-  ['noah-garcia', 'Noah Garcia', '11:14 AM', 'University of Central Arkansas', 'Accounting'],
-  ['olivia-brown', 'Olivia Brown', '11:28 AM', 'University of Arkansas at Little Rock', 'Management'],
 ];
 
 export async function loadFallbackCandidates() {
