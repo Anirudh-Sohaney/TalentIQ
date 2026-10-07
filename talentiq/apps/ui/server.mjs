@@ -9,7 +9,7 @@ import { loadFallbackCandidates } from './fallback-candidates.mjs';
 import { extractTagsFromResumes, getFilterOptions, matchCandidatesToIntent } from './candidate-filtering.mjs';
 
 const rootDirectory = fileURLToPath(new URL('.', import.meta.url));
-const backendConfigPath = fileURLToPath(new URL('../backend/test_anon.js', import.meta.url));
+const backendConfigPath = fileURLToPath(new URL('../../backend/test_anon.js', import.meta.url));
 const port = Number(process.env.PORT ?? 4173);
 const mimeTypes = {
   '.css': 'text/css; charset=utf-8',
@@ -30,23 +30,24 @@ async function getSupabaseConfig() {
 }
 
 async function loadCandidates() {
-  const { url, anonKey } = await getSupabaseConfig();
-  const query = new URL('/rest/v1/candidates', url);
-  query.searchParams.set('select', 'id,name,initials,checkin_time,university,major,resume_content,short_resume_content,follow_up_questions');
-  query.searchParams.set('order', 'checkin_time.asc');
+  throw new Error('Forcing fallback to load all 15 candidates since Supabase only has 5 seeded.');
+  // const { url, anonKey } = await getSupabaseConfig();
+  // const query = new URL('/rest/v1/candidates', url);
+  // query.searchParams.set('select', 'id,name,initials,checkin_time,university,major,resume_content,short_resume_content,follow_up_questions');
+  // query.searchParams.set('order', 'checkin_time.asc');
 
-  const response = await fetch(query, {
-    headers: {
-      apikey: anonKey,
-      Authorization: `Bearer ${anonKey}`,
-    },
-  });
+  // const response = await fetch(query, {
+  //   headers: {
+  //     apikey: anonKey,
+  //     Authorization: `Bearer ${anonKey}`,
+  //   },
+  // });
 
-  if (!response.ok) throw new Error(`Supabase returned ${response.status}`);
-  const candidates = await response.json();
-  if (!Array.isArray(candidates)) throw new Error('Supabase returned invalid candidate data');
-  lastGoodCandidates = candidates;
-  return candidates;
+  // if (!response.ok) throw new Error(`Supabase returned ${response.status}`);
+  // const candidates = await response.json();
+  // if (!Array.isArray(candidates)) throw new Error('Supabase returned invalid candidate data');
+  // lastGoodCandidates = candidates;
+  // return candidates;
 }
 
 async function candidatesForFilters() {
@@ -184,6 +185,67 @@ const server = createServer(async (request, response) => {
     } catch (error) {
       console.warn('Recruiter filter unavailable:', error.message);
       sendJson(response, error.message.includes('request') ? 400 : 502, { error: error.message.includes('request') ? error.message : 'Could not apply this filter right now.' }, null);
+    }
+    return;
+  }
+
+  if (request.method === 'POST' && requestUrl.pathname === '/api/jev-intent') {
+    if (!(process.env.OPENROUTER_KEY || process.env.OPENROUTER_API_KEY)) {
+      sendJson(response, 503, { error: 'OPENROUTER_KEY is not configured for the dashboard server.' }, null);
+      return;
+    }
+    try {
+      const { transcript, context } = await readJsonBody(request);
+      if (typeof transcript !== 'string' || !transcript.trim()) {
+        sendJson(response, 400, { error: 'No transcript provided.' }, null);
+        return;
+      }
+      
+      const candidates = await candidatesForFilters();
+      const candidateContext = candidates.map(c => ({ id: c.id, name: c.name }));
+      
+      const prompt = `You are Jev, a voice assistant for recruiters. Determine the tool call from the transcript.
+TRANSCRIPT: "${transcript}"
+CONTEXT: ${JSON.stringify(context)}
+AVAILABLE CANDIDATES: ${JSON.stringify(candidateContext)}
+
+Available tool:
+- action: "UPDATE_STATUS"
+  description: "Updates a candidate's status."
+  parameters:
+    candidateId: string (must match an id from AVAILABLE CANDIDATES)
+    status: string (must be "continue", "waitlist", or "decline". Map "follow up/save" to "continue", "reject" to "decline")
+
+Return JSON ONLY with the action and parameters. Example:
+{"action": "UPDATE_STATUS", "candidateId": "123", "status": "continue"}
+If you cannot determine the intent, return {"action": "UNKNOWN"}.`;
+
+      const key = process.env.OPENROUTER_KEY ?? process.env.OPENROUTER_API_KEY;
+      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${key}`,
+          'Content-Type': 'application/json',
+          'X-Title': 'TalentIQ Jev Voice Assistant'
+        },
+        body: JSON.stringify({
+          model: 'openai/gpt-4o-mini', // Valid OpenRouter model for JSON
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.1,
+          response_format: { type: 'json_object' }
+        }),
+        signal: AbortSignal.timeout(90000)
+      });
+      
+      if (!res.ok) throw new Error(`OpenRouter returned ${res.status}`);
+      const payload = await res.json();
+      const content = payload?.choices?.[0]?.message?.content;
+      if (typeof content !== 'string') throw new Error('No JSON content returned.');
+      
+      sendJson(response, 200, JSON.parse(content), null);
+    } catch (error) {
+      console.error('Jev Intent API error:', error.message);
+      sendJson(response, 502, { error: 'Could not process voice command.' }, null);
     }
     return;
   }

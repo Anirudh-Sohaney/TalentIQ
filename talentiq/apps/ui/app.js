@@ -1,4 +1,5 @@
 import { getGmailThread, sendGmailMessage } from './gmail.js';
+import { startJevListening, stopJevListening } from './jev.js';
 
 export let checkIns = [];
 
@@ -1313,6 +1314,33 @@ function startDashboard() {
     } else if (!document.querySelector('[data-resume-info-screen]').hidden) {
       closeResumeInfo();
     }
+  });
+
+  // JEV Voice Controller Integration
+  window.addEventListener('keydown', (event) => {
+    // Ctrl + Space to trigger Jev listening
+    if (event.ctrlKey && event.code === 'Space') {
+      event.preventDefault(); // Prevent page scroll
+      startJevListening();
+    }
+  });
+
+  window.addEventListener('keyup', (event) => {
+    // Stop Jev listening when Space is released (if triggered via Ctrl+Space)
+    if (event.code === 'Space') {
+      // Pass the current state to the backend so it knows about candidate IDs and names
+      const context = {
+        activeView: state.activeView,
+        visibleCandidates: getVisibleLogsForView(checkIns, state).map(c => ({ id: c.id, name: c.name }))
+      };
+      stopJevListening(context);
+    }
+  });
+
+  window.addEventListener('jev:updateStatus', (event) => {
+    const { candidateId, status } = event.detail;
+    state.candidateStatuses = { ...(state.candidateStatuses ?? {}), [candidateId]: status };
+    renderList(); // Re-render UI to show new status
   });
 
   fetchCandidates()
